@@ -23,7 +23,6 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
     _mqtt_client = None
     app_process = None
     client_topic = f'client-topic-{randint(100, 999)}'
-    tcex_testing_context = None
     server_topic = f'server-topic-{randint(100, 999)}'
     service_run_method = 'subprocess'  # run service as subprocess, multiprocess, or thread
     shutdown = False
@@ -34,14 +33,14 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
     sleep_before_delete_config = 2
     sleep_before_shutdown = 0.5
 
-    @property
-    def context_tracker(self):
-        """Return the current context trackers."""
-        if not self._context_tracker:
-            self._context_tracker = json.loads(
-                self.redis_client.hget(self.tcex_testing_context, '_context_tracker') or '[]'
-            )
-        return self._context_tracker
+    # @property
+    # def context_tracker(self):
+    #     """Return the current context trackers."""
+    #     if not self._context_tracker:
+    #         self._context_tracker = json.loads(
+    #             self.redis_client.hget(self.tcex_testing_context, '_context_tracker') or '[]'
+    #         )
+    #     return self._context_tracker
 
     @property
     def default_args(self):
@@ -72,16 +71,16 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
             )
         return self._mqtt_client
 
-    @property
-    def output_variables(self):
-        """Return playbook output variables"""
-        if self._output_variables is None:
-            self._output_variables = []
-            # Currently there is no support for projects with multiple install.json files.
-            for p in self.install_json.get('playbook', {}).get('outputVariables') or []:
-                # "#Trigger:9876:app.data.count!String"
-                self._output_variables.append(f"#Trigger:{9876}:{p.get('name')}!{p.get('type')}")
-        return self._output_variables
+    # @property
+    # def output_variables(self):
+    #     """Return playbook output variables"""
+    #     if self._output_variables is None:
+    #         self._output_variables = []
+    #         # Currently there is no support for projects with multiple install.json files.
+    #         for p in self.install_json.get('playbook', {}).get('outputVariables') or []:
+    #             # "#Trigger:9876:app.data.count!String"
+    #             self._output_variables.append(f"#Trigger:{9876}:{p.get('name')}!{p.get('type')}")
+    #     return self._output_variables
 
     def publish(self, message, topic=None):
         """Publish message on server channel."""
@@ -108,7 +107,7 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
         message['apiToken'] = '000000000'
         message['expireSeconds'] = int(time.time() + 86400)
         message['command'] = 'CreateConfig'
-        message['config']['tc_playbook_out_variables'] = self.output_variables
+        message['config']['tc_playbook_out_variables'] = self.ij.output_variable_array
         message['triggerId'] = message.pop('trigger_id')
         self.publish(json.dumps(message))
         time.sleep(self.sleep_after_publish_config)
@@ -142,9 +141,11 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
 
         Args:
             trigger_id (str): The trigger ID.
+            body (str): The Body of the request.
             headers (list, optional): A list of headers name/value pairs. Defaults to [].
             method (str, optional): The method. Defaults to 'GET'.
             query_params (list, optional): A list of query param name/value pairs. Defaults to [].
+            request_key (str, optional): The current request key.
         """
         body = body or ''
         if isinstance(body, dict):
@@ -169,42 +170,44 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
         """Implement in Child Class"""
         raise NotImplementedError('Child class must implement this method.')
 
-    def run_profile(self, profile_name):
-        """Run an App using the profile name.
+    # def run_profile(self, profile_name):
+    #     """Run an App using the profile name.
 
-        Args:
-            profile_name (str): The name of the profile to run.
+    #     Args:
+    #         profile_name (str): The name of the profile to run.
 
-        Returns:
-            int: The exit code for the App execution.
-        """
-        profile = self.profile(profile_name)
-        if not profile:
-            self.log.error(f'No profile named {profile_name} found.')
-            return self._exit(1)
+    #     Returns:
+    #         int: The exit code for the App execution.
+    #     """
+    #     profile = self.profile(profile_name)
+    #     if not profile:
+    #         self.log.error(f'No profile named {profile_name} found.')
+    #         return self._exit(1)
 
-        # stage any staging data
-        self.stager.redis.from_dict(profile.get('stage', {}).get('redis', {}))
+    #     # stage any staging data
+    #     self.stager.redis.from_dict(profile.get('stage', {}).get('redis', {}))
 
-        # build args from install.json
-        args = {}
-        args.update(profile.get('inputs', {}).get('required', {}))
-        args.update(profile.get('inputs', {}).get('optional', {}))
-        if not args:
-            self.log.error(f'No profile named {profile_name} found.')
-            return self._exit(1)
+    #     # build args from install.json
+    #     args = {}
+    #     args.update(profile.get('inputs', {}).get('required', {}))
+    #     args.update(profile.get('inputs', {}).get('optional', {}))
+    #     if not args:
+    #         self.log.error(f'No profile named {profile_name} found.')
+    #         return self._exit(1)
 
-        # run the App
-        self.run(args)
+    #     # run the App
+    #     self.run(args)
 
-        return self._exit(0)
+    #     return self._exit(0)
 
     def run_service(self):
         """Run the micro-service."""
         self.log_data('run', 'service method', self.service_run_method)
         if self.service_run_method == 'subprocess':
-            # create required .app_params encrypted file
-            self.app_init_create_config(self.args, self.output_variables, self.tcex_testing_context)
+            # create required .app_params encrypted file. args are set in custom.py
+            self.app_init_create_config(
+                self.args, self.ij.output_variable_array, self.tcex_testing_context
+            )
 
             # run the Service App as a subprocess
             self.app_process = subprocess.Popen(['python', 'run.py'])

@@ -320,7 +320,7 @@ class Validate(Bin):
 
         if 'sqlite3' in sys.modules:
             # create temporary inputs tables
-            self.db_create_table(self.input_table, ij_input_names)
+            self.permutations.db_create_table(self.permutations.input_table, ij_input_names)
 
         # inputs
         status = True
@@ -339,9 +339,12 @@ class Validate(Bin):
 
                 if 'sqlite3' in sys.modules:
                     if p.get('display'):
-                        display_query = f"SELECT * FROM {self.input_table} WHERE {p.get('display')}"
+                        display_query = (
+                            f'SELECT * FROM {self.permutations.input_table}'
+                            f" WHERE {p.get('display')}"
+                        )
                         try:
-                            self.db_conn.execute(display_query.replace('"', ''))
+                            self.permutations.db_conn.execute(display_query.replace('"', ''))
                         except sqlite3.Error:
                             self.validation_data['errors'].append(
                                 'Layouts input.parameters[].display validations failed '
@@ -374,9 +377,11 @@ class Validate(Bin):
 
             if 'sqlite3' in sys.modules:
                 if o.get('display'):
-                    display_query = f"SELECT * FROM {self.input_table} WHERE {o.get('display')}"
+                    display_query = (
+                        f"SELECT * FROM {self.permutations.input_table} WHERE {o.get('display')}"
+                    )
                     try:
-                        self.db_conn.execute(display_query.replace('"', ''))
+                        self.permutations.db_conn.execute(display_query.replace('"', ''))
                     except sqlite3.Error:
                         self.validation_data['errors'].append(
                             f"""Layouts outputs.display validations failed ("{o.get('display')}" """

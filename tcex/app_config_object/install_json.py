@@ -26,6 +26,13 @@ class InstallJson:
         return bool_value
 
     @property
+    def app_output_var_type(self):
+        """Return the appropriate output var type for the current App."""
+        if self.runtime_level.lower() in ['triggerservice', 'webhooktriggerservice']:
+            return 'Trigger'
+        return 'App'
+
+    @property
     def contents(self):
         """Return install.json contents."""
         if self._contents is None:
@@ -35,6 +42,22 @@ class InstallJson:
             except OSError:
                 self._contents = {'runtimeLevel': 'external'}
         return self._contents
+
+    def create_output_variables(self, output_variables, job_id=9876):
+        """Create output variables.
+
+        Args:
+            output_variables (dict): A dict of the output variables
+            job_id (int): A job id to use in output variable string.
+        """
+        variables = []
+        for p in output_variables:
+            # "#App:9876:app.data.count!String"
+            # "#Trigger:9876:app.data.count!String"
+            variables.append(
+                f"#{self.app_output_var_type}:{job_id}:{p.get('name')}!{p.get('type')}"
+            )
+        return variables
 
     @staticmethod
     def expand_valid_values(valid_values):
@@ -223,6 +246,21 @@ class InstallJson:
     def note(self):
         """Return property."""
         return self.contents.get('note')
+
+    @property
+    def output_variable_array(self):
+        """Return playbook output variable name array"""
+        return self.create_output_variables(self.output_variables)
+
+    @property
+    def output_variable_csv_string(self):
+        """Return playbook output variables as CSV string"""
+        return ','.join(self.output_variable_array)
+
+    @property
+    def output_variables(self):
+        """Return output variables as name/data dict."""
+        return self.playbook.get('outputVariables', [])
 
     @property
     def params(self):

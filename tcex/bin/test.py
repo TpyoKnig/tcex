@@ -4,7 +4,6 @@
 import json
 import os
 import re
-import sys
 from random import randint
 
 import colorama as c
@@ -64,66 +63,6 @@ class CustomTemplates:
             rendered_template = template.render(**variables)
             with open(feature_file, 'a') as f:
                 f.write(rendered_template)
-
-
-class Profiles:
-    """Profile Class
-
-    Raises:
-        NotImplementedError: The delete method is not currently implemented.
-        NotImplementedError: The update method is not currently implemented.
-    """
-
-    def __init__(self, profile_dir):
-        """Initialize class properties."""
-        self.profile_dir = profile_dir
-
-        # properties
-        self._profiles = None
-
-    def add(self, profile_name, profile_data, sort_keys=True):
-        """Add a profile."""
-        profile_filename = os.path.join(self.profile_dir, f'{profile_name}.json')
-        if os.path.isfile(profile_filename):
-            print(
-                f'{c.Style.BRIGHT}{c.Fore.RED}A profile with the name '
-                f'({profile_name}) already exists.'
-            )
-            sys.exit(1)
-
-        profile = {
-            'exit_codes': profile_data.get('exit_codes', [0]),
-            'exit_message': None,
-            'outputs': profile_data.get('outputs'),
-            'stage': profile_data.get('stage', {'redis': {}, 'threatconnect': {}}),
-        }
-        if profile_data.get('runtime_level').lower() == 'triggerservice':
-            profile['configs'] = profile_data.get('configs')
-            profile['trigger'] = profile_data.get('trigger')
-        elif profile_data.get('runtime_level').lower() == 'webhooktriggerservice':
-            profile['configs'] = profile_data.get('configs')
-            profile['webhook_event'] = profile_data.get('webhook_event')
-        else:
-            profile['inputs'] = profile_data.get('inputs')
-
-        if profile_data.get('output_variables'):
-            # add a list of output variable for the current permutation
-            profile['permutation_output_variables'] = profile_data.get('output_variables')
-
-        if profile_data.get('runtime_level').lower() == 'organization':
-            profile['validation_criteria'] = profile_data.get('validation_criteria', {'percent': 5})
-            profile.pop('outputs')
-
-        with open(profile_filename, 'w') as fh:
-            json.dump(profile, fh, indent=2, sort_keys=sort_keys)
-
-    def delete(self, profile_name):
-        """Delete an existing profile."""
-        raise NotImplementedError('The delete method is not currently implemented.')
-
-    def update(self, profile_name):
-        """Update an existing profile."""
-        raise NotImplementedError('The update method is not currently implemented.')
 
 
 class TestProfileTemplates:
@@ -241,7 +180,7 @@ class ValidationTemplates:
     @property
     def parent_template(self):
         """Return template file"""
-        url = f"{BASE_URL}/{self.branch}/app_init/tests/{'validate.py.tpl'}"
+        url = f'{BASE_URL}/{self.branch}/app_init/tests/validate.py.tpl'
         r = requests.get(url, allow_redirects=True)
         if not r.ok:
             raise RuntimeError('Could not download template file.')
@@ -296,14 +235,13 @@ class Test(Bin):
         if not self.args.permutations:
             self._output_variables = None
 
-            self.base_dir = os.path.join(self.app_path, 'tests')
-            self.feature_dir = os.path.join(self.base_dir, self.args.feature)
-            self.feature_profile_dir = os.path.join(self.base_dir, self.args.feature, 'profiles.d')
-
-            self.custom_templates = CustomTemplates(self.base_dir, self.args.branch)
-            self.profiles = Profiles(self.profiles_dir)
-            self.test_profile_template = TestProfileTemplates(self.base_dir, self.args.branch)
-            self.validation_templates = ValidationTemplates(self.base_dir, self.args.branch)
+            self.custom_templates = CustomTemplates(self.profile.test_directory, self.args.branch)
+            self.test_profile_template = TestProfileTemplates(
+                self.profile.test_directory, self.args.branch
+            )
+            self.validation_templates = ValidationTemplates(
+                self.profile.test_directory, self.args.branch
+            )
 
     @staticmethod
     def _print_results(file, status):
@@ -357,7 +295,9 @@ class Test(Bin):
                         'optional': self.profile_settings_args_layout_json(False),
                         'required': self.profile_settings_args_layout_json(True),
                     },
-                    'output_variables': self._output_permutations[self.args.permutation_id],
+                    'output_variables': self.permutations.output_permutations[
+                        self.args.permutation_id
+                    ],
                     'runtime_level': self.ij.runtime_level,
                 }
             }
@@ -406,7 +346,7 @@ class Test(Bin):
 
         # add profiles
         for profile_name, data in profile_data.items():
-            self.profiles.add(profile_name, data, sort_keys=sort_keys)
+            self.profile.add(profile_data=data, profile_name=profile_name, sort_keys=sort_keys)
 
     @staticmethod
     def add_profile_staging(staging_files):
@@ -421,7 +361,11 @@ class Test(Bin):
 
     def create_dirs(self):
         """Create tcex.d directory and sub directories."""
-        for d in [self.base_dir, self.feature_dir, self.feature_profile_dir]:
+        for d in [
+            self.profile.test_directory,
+            self.profile.feature_directory,
+            self.profile.directory,
+        ]:
             if not os.path.isdir(d):
                 os.makedirs(d)
 
@@ -430,31 +374,31 @@ class Test(Bin):
 
     def create_dirs_init(self):
         """Create the __init__.py file under dir."""
-        for d in [self.base_dir, self.feature_dir]:
+        for d in [self.profile.test_directory, self.profile.feature_directory]:
             if os.path.isdir(d):
                 with open(os.path.join(d, '__init__.py'), 'a'):
                     os.utime(os.path.join(d, '__init__.py'), None)
 
-    def download_file(self, remote_filename):
-        """Download file from github.
+    # def download_file(self, remote_filename):
+    #     """Download file from github.
 
-        Args:
-            remote_filename (str): The name of the file as defined in git repository.
-        """
-        # TODO: can this method be merged with tcex_bin_init download_file?
-        status = 'Failed'
-        local_filename = self.test_file
-        if not os.path.isfile(local_filename):
-            url = f'{BASE_URL}/{self.args.branch}/app_init/tests/{remote_filename}'
-            r = requests.get(url, allow_redirects=True)
-            if r.ok:
-                open(local_filename, 'wb').write(r.content)
-                status = 'Success'
-            else:
-                self.handle_error(f'Error requesting: {url}', False)
+    #     Args:
+    #         remote_filename (str): The name of the file as defined in git repository.
+    #     """
+    #     # TODO: can this method be merged with tcex_bin_init download_file?
+    #     status = 'Failed'
+    #     local_filename = self.test_file
+    #     if not os.path.isfile(local_filename):
+    #         url = f'{BASE_URL}/{self.args.branch}/app_init/tests/{remote_filename}'
+    #         r = requests.get(url, allow_redirects=True)
+    #         if r.ok:
+    #             open(local_filename, 'wb').write(r.content)
+    #             status = 'Success'
+    #         else:
+    #             self.handle_error(f'Error requesting: {url}', False)
 
-            # print download status
-            self._print_results(local_filename, status)
+    #         # print download status
+    #         self._print_results(local_filename, status)
 
     def download_conftest(self):
         """Download conftest.py file from github."""
@@ -519,40 +463,35 @@ class Test(Bin):
                 self._output_variables.append(f"#{var_type}:{9876}:{p.get('name')}!{p.get('type')}")
         return self._output_variables
 
-    @property
-    def permutations_file(self):
-        """Return permutations fully qualified filename."""
-        return os.path.join(self.base_dir, 'permutations.json')
-
     def permutation_file_exists(self):
         """Check to see if the permutations file exists"""
-        return os.path.isfile(self.permutations_file)
+        return os.path.isfile(self.permutations.filename)
 
-    @property
-    def profiles_dir(self):
-        """Return profile fully qualified filename."""
-        return os.path.join(self.base_dir, self.args.feature, 'profiles.d')
+    # @property
+    # def profiles_dir(self):
+    #     """Return profile fully qualified filename."""
+    #     return os.path.join(self.base_dir, self.args.feature, 'profiles.d')
 
-    @property
-    def test_file(self):
-        """Return generate test filename."""
-        test_file = None
-        if self.args.file:
-            # TODO: add comment on what this does
-            if not self.args.file.startswith('test_'):
-                self.args.file = 'test_' + self.args.file
-            if not self.args.file.endswith('.py'):
-                self.args.file = self.args.file + '.py'
-            test_file = os.path.join(self.base_dir, self.args.feature, self.args.file)
+    # @property
+    # def test_file(self):
+    #     """Return generate test filename."""
+    #     test_file = None
+    #     if self.args.file:
+    #         # TODO: add comment on what this does
+    #         if not self.args.file.startswith('test_'):
+    #             self.args.file = 'test_' + self.args.file
+    #         if not self.args.file.endswith('.py'):
+    #             self.args.file = self.args.file + '.py'
+    #         test_file = os.path.join(self.base_dir, self.args.feature, self.args.file)
 
-        return test_file
+    #     return test_file
 
     @property
     def validation_base_file(self):
         """Return validations fully qualified filename."""
-        return os.path.join(self.base_dir, 'validation_base.py')
+        return os.path.join(self.profile.test_directory, 'validation_base.py')
 
     @property
     def validation_file(self):
         """Return validations fully qualified filename."""
-        return os.path.join(self.base_dir, self.args.feature, 'validation.py')
+        return os.path.join(self.profile.test_directory, self.args.feature, 'validation.py')
