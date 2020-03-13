@@ -82,22 +82,15 @@ class Profile:
             'outputs': profile_data.get('outputs'),
             'stage': profile_data.get('stage', {'redis': {}, 'threatconnect': {}}),
         }
-        # if profile_data.get('runtime_level').lower() == 'triggerservice':
         if self.ij.runtime_level.lower() == 'triggerservice':
             profile['configs'] = profile_data.get('configs')
             profile['trigger'] = profile_data.get('trigger')
-        # elif profile_data.get('runtime_level').lower() == 'webhooktriggerservice':
         elif self.ij.runtime_level.lower() == 'webhooktriggerservice':
             profile['configs'] = profile_data.get('configs')
             profile['webhook_event'] = profile_data.get('webhook_event')
         else:
             profile['inputs'] = profile_data.get('inputs')
 
-        # if profile_data.get('output_variables'):
-        #     # add a list of output variable for the current permutation
-        #     profile['permutation_output_variables'] = profile_data.get('output_variables')
-
-        # if profile_data.get('runtime_level').lower() == 'organization':
         if self.ij.runtime_level.lower() == 'organization':
             profile['validation_criteria'] = profile_data.get('validation_criteria', {'percent': 5})
             profile.pop('outputs')
@@ -245,9 +238,12 @@ class Profile:
         with open(self.filename, 'r+') as fh:
             profile_data = json.load(fh)
 
-            # if layout.json get permutations
-            #
-            #
+            output_variables = self.ij.output_variable_array
+            if self.lj.has_layout:
+                # if layout based App get valid outputs
+                output_variables = self.ij.create_output_variables(
+                    self.permutations.outputs_by_inputs(self.args)
+                )
 
             outputs = {}
             for context in self.context_tracker:
@@ -256,11 +252,12 @@ class Profile:
                 trigger_id = self.redis_client.hget(context, '_trigger_id')
 
                 # updated outputs with validation data
-                self.update_outputs_variables(outputs, redis_data, trigger_id)
+                self.update_outputs_variables(outputs, output_variables, redis_data, trigger_id)
 
                 # cleanup redis
                 self.clear_context(context)
 
+            print('self.replace_outputs', self.replace_outputs)
             # write updated profile
             if self.outputs is None or self.replace_outputs:
                 profile_data['outputs'] = outputs
@@ -270,10 +267,20 @@ class Profile:
         # update _data dict with updated profile
         self._data = json.dumps(profile_data)
 
-    def update_outputs_variables(self, outputs, redis_data, trigger_id):
-        """Return the outputs section of a profile."""
+    def update_outputs_variables(self, outputs, output_variables, redis_data, trigger_id):
+        """Return the outputs section of a profile.
+
+        Args:
+            outputs (dict): The dict to add outputs.
+            output_variables (list): A valid list of output variables for this profile.
+            redis_data (dict): The data from KV store for this profile.
+            trigger_id (str): The current trigger_id (service Apps).
+        """
 
         for variable in self.ij.output_variable_array:
+            if variable not in output_variables:
+                continue
+
             # get data from redis for current context
             data = redis_data.get(variable.encode('utf-8'))
 
@@ -486,12 +493,12 @@ class Profile:
         """Return combined optional and required args."""
         args = self.inputs_optional
         args.update(self.inputs_required)
-        return args
+        return dict(args)
 
     @property
     def configs(self):
         """Return environments."""
-        return self.data.get('configs', [])
+        return list(self.data.get('configs', []))
 
     @property
     def environments(self):

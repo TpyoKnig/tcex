@@ -127,6 +127,7 @@ class InstallJson:
                 params.setdefault(p.get('name'), p)
         return params
 
+    # TOOD: should this be a property
     def output_variables_dict(self):
         """Return output variables as name/data dict."""
         output_variables = {}

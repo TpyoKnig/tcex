@@ -3,6 +3,7 @@
 """TcEx Framework LayoutJson."""
 import json
 import os
+import random
 import sys
 
 import sqlite3
@@ -216,11 +217,45 @@ class Permutations:
             self.init_permutations()
         return self._output_permutations
 
+    def outputs_by_inputs(self, inputs):
+        """Return all output based on provided inputs
+
+        Args:
+            inputs (dict): The args/inputs dict.
+        """
+        table = f'temp_{random.randint(100,999)}'
+        self.db_create_table(table, self.ij.params_dict.keys())
+        self.db_insert_record(table, self.ij.params_dict.keys())
+
+        for name, val in inputs.items():
+            self.db_update_record(table, name, val)
+
+        # TODO: Can this be combined with gen_perm code
+        outputs = []
+        # loop through all output variables in install.json
+        for output_variable, output_data in self.ij.output_variables_dict().items():
+            if self.lj.outputs_dict.get(output_variable) is None:
+                # an output not listed in layout.json should always be shown
+                valid = True
+            else:
+                # all other outputs must be validated
+                display = self.lj.outputs_dict.get(output_variable, {}).get('display')
+                valid = self.validate_layout_display(table, display)
+
+            if valid:
+                # valid outputs get added to array
+                outputs.append(output_data)
+
+        # drop database
+        self.db_drop_table(table)
+
+        return outputs
+
     def permutations(self):
         """Process layout.json names/display to get all permutations of args."""
-        # if 'sqlite3' not in sys.modules:
-        #     print('The sqlite3 module needs to be build-in to Python for this feature.')
-        #     sys.exit(1)
+        if 'sqlite3' not in sys.modules:
+            print('The sqlite3 module needs to be build-in to Python for this feature.')
+            sys.exit(1)
 
         # create db for permutations testing
         self.db_create_table(self.input_table, self.ij.params_dict.keys())

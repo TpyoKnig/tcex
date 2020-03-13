@@ -11,9 +11,8 @@ class LayoutJson:
 
     def __init__(self, filename=None, path=None):
         """Initialize class properties."""
-        self.filename = filename or 'layout.json'
-        if path is not None:
-            self.filename = os.path.join(path, self.filename)
+        self._filename = filename or 'layout.json'
+        self._path = path or os.getcwd()
 
         # properties
         self._contents = None
@@ -33,6 +32,18 @@ class LayoutJson:
             with open(self.filename, 'r') as fh:
                 self._contents = json.load(fh, object_pairs_hook=OrderedDict)
         return self._contents
+
+    @property
+    def filename(self):
+        """Return the fqpn for the layout.json file."""
+        return os.path.join(self._path, self._filename)
+
+    @property
+    def has_layout(self):
+        """Return True if App has layout.json file."""
+        if os.path.isfile(self.filename):
+            return True
+        return False
 
     @property
     def parameters_dict(self):
