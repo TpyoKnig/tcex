@@ -3,6 +3,26 @@
 import os
 import shutil
 import sys
+import pytest
+
+
+def pytest_addoption(parser):
+    """Add arg flag to control replacement of outputs."""
+    parser.addoption('--replace_exit_message', action='store_true')
+    parser.addoption('--replace_outputs', action='store_true')
+    parser.addoption('--update', action='store_true')
+
+
+@pytest.fixture()
+def replace_exit_message(pytestconfig):
+    """Return the current value for replace_outputs args."""
+    return pytestconfig.getoption('replace_exit_message')
+
+
+@pytest.fixture()
+def replace_outputs(pytestconfig):
+    """Return the current value for replace_outputs args."""
+    return pytestconfig.getoption('replace_outputs')
 
 
 # clear log directory

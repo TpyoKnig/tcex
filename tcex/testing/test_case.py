@@ -48,6 +48,7 @@ class TestCase:
     ij = InstallJson()
     log = logger
     env = set(os.getenv('TCEX_TEST_ENVS', 'build').split(','))
+    redis_client = None
     tcex = None
     tcex_testing_context = None
 
@@ -182,11 +183,14 @@ class TestCase:
             args['tc_token_expires'] = os.getenv('TC_TOKEN_EXPIRES')
         return args
 
-    def init_profile(self, profile_name):
+    def init_profile(self, profile_name, replace_exit_message=False, replace_outputs=False):
         """Stages and sets up the profile given a profile name"""
         self._profile = Profile(
             default_args=self.default_args,
             name=profile_name,
+            redis_client=self.redis_client,
+            replace_exit_message=replace_exit_message,
+            replace_outputs=replace_outputs,
             tcex_testing_context=self.tcex_testing_context,
         )
 
@@ -230,26 +234,6 @@ class TestCase:
         """Log validation data."""
         msg = f"{f'[{stage}]'!s:>20} : {label!s:<15}: {data!s:<50}"
         getattr(self.log, level)(msg)
-
-    def populate_exit_message(self):
-        """Generate validation rules from App outputs."""
-        message_tc = ''
-        if os.path.isfile(self.profile.message_tc_filename):
-            with open(self.profile.message_tc_filename, 'r') as mh:
-                message_tc = mh.read()
-
-        with open(self.profile.filename, 'r+') as fh:
-            profile_data = json.load(fh)
-
-            if profile_data.get('exit_message') is None or isinstance(
-                profile_data.get('exit_message'), str
-            ):
-                # update the profile
-                profile_data['exit_message'] = {'expected_output': message_tc, 'op': 'eq'}
-
-                fh.seek(0)
-                fh.write(json.dumps(profile_data, indent=2, sort_keys=True))
-                fh.truncate()
 
     @property
     def profile(self):
@@ -365,7 +349,7 @@ class TestCase:
             'webhooktriggerservice',
         ]:
             # exit message can not be validated for a Service App
-            self.populate_exit_message()
+            self.profile.update_exit_message()
 
         # delete threatconnect staged data
         self.stager.threatconnect.delete_staged(self._staged_tc_data)

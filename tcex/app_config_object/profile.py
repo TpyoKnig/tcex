@@ -8,8 +8,9 @@ import sys
 import hvac
 import jmespath
 
-from tcex.app_config_object.install_json import InstallJson
-from tcex.app_config_object.layout_json import LayoutJson
+from .install_json import InstallJson
+from .layout_json import LayoutJson
+from .permutations import Permutations
 
 
 class Profile:
@@ -21,11 +22,22 @@ class Profile:
             in the profile.d director. Defaults to None.
     """
 
-    def __init__(self, default_args, feature=None, name=None, tcex_testing_context=None):
+    def __init__(
+        self,
+        default_args,
+        feature=None,
+        name=None,
+        redis_client=None,
+        replace_exit_message=False,
+        replace_outputs=False,
+        tcex_testing_context=None,
+    ):
         """Initialize Class properties."""
         self._default_args = default_args
         self._feature = feature
         self._name = name
+        self.replace_exit_message = replace_exit_message
+        self.replace_outputs = replace_outputs
         self.tcex_testing_context = tcex_testing_context
 
         # properties
@@ -35,7 +47,8 @@ class Profile:
         self._context_tracker = []
         self.ij = InstallJson()
         self.lj = LayoutJson()
-        self.redis_client = None
+        self.permutations = Permutations()
+        self.redis_client = redis_client
         self.tc_staged_data = {}
         self.vault_client = hvac.Client(
             url=os.getenv('VAULT_URL', 'http://localhost:8200'),
@@ -195,8 +208,35 @@ class Profile:
         """Update an existing profile."""
         raise NotImplementedError('The update method is not currently implemented.')
 
+    def update_exit_message(self):
+        """Update validation rules from exit_message section of profile."""
+        message_tc = ''
+        if os.path.isfile(self.message_tc_filename):
+            with open(self.message_tc_filename, 'r') as mh:
+                message_tc = mh.read()
+
+        with open(self.filename, 'r+') as fh:
+            profile_data = json.load(fh)
+
+            if (
+                profile_data.get('exit_message') is None
+                or isinstance(profile_data.get('exit_message'), str)
+                or self.replace_exit_message
+            ):
+                # update the profile
+                profile_data['exit_message'] = {'expected_output': message_tc, 'op': 'eq'}
+
+                fh.seek(0)
+                fh.write(json.dumps(profile_data, indent=2, sort_keys=True))
+                fh.truncate()
+
     def update_outputs(self):
-        """Update the outputs section of a profile."""
+        """Update the validation rules for outputs section of a profile.
+
+        By default this method will only update if the current value is null. If the
+        flag --update_outputs is passed to pytest (e.g., pytest --update_args) the
+        outputs will updated regardless of their current value.
+        """
         if self.redis_client is None:
             # redis_client is only available for children of TestCasePlaybookCommon
             print('An instance of redis_client is not set.')
@@ -222,7 +262,8 @@ class Profile:
                 self.clear_context(context)
 
             # write updated profile
-            if self.outputs is None:
+            if self.outputs is None or self.replace_outputs:
+                profile_data['outputs'] = outputs
                 fh.seek(0)
                 fh.write(f'{json.dumps(profile_data, indent=2, sort_keys=True)}\n')
 
@@ -401,8 +442,9 @@ class Profile:
         if profile_data.get('stage') is None:
             return profile_data
 
-        kvstore_data = profile_data.get('stage').pop('redis')
-        profile_data['stage']['kvstore'] = kvstore_data
+        kvstore_data = profile_data.get('stage').pop('redis', None)
+        if kvstore_data:
+            profile_data['stage']['kvstore'] = kvstore_data
 
         return profile_data
 

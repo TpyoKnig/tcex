@@ -285,7 +285,7 @@ class Test(Bin):
                     'exit_codes': d.get('exit_codes'),
                     'inputs': d.get('args', {}).get('app'),
                     'runtime_level': self.ij.runtime_level,
-                    'stage': {'redis': self.add_profile_staging(d.get('data_files', []))},
+                    'stage': {'kvstore': self.add_profile_staging(d.get('data_files', []))},
                 }
 
         elif self.ij.runtime_level.lower() == 'playbook' and self.args.permutation_id is not None:

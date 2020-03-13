@@ -156,7 +156,7 @@ class TestCasePlaybookCommon(TestCase):
 
         # clear context tracker
         # self._context_tracker = []
-        self.profile.context_tracker = []
+        self.profile._context_tracker = []
 
         # run test_case teardown_method
         super().teardown_method()

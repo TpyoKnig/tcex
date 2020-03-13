@@ -49,11 +49,11 @@ class TestProfiles(${class_name}):
 
     % if app_type in ['triggerservice', 'webhooktriggerservice']:
     @pytest.mark.parametrize('profile_name', profile_names)
-    def test_profiles(self, profile_name, monkeypatch):
+    def test_profiles(self, profile_name, replace_outputs, monkeypatch):
         """Run pre-created testing profiles."""
 
         # initialize profile
-        self.init_profile(profile_name)
+        self.init_profile(profile_name, replace_outputs)
 
         # call pre-configuration setup per test
         self.custom.test_pre_create_config(self, self.profile.data, monkeypatch)
@@ -98,11 +98,11 @@ class TestProfiles(${class_name}):
 
     % else:
     @pytest.mark.parametrize('profile_name', profile_names)
-    def test_profiles(self, profile_name, monkeypatch):  # pylint: disable=unused-argument
+    def test_profiles(self, profile_name, replace_outputs, monkeypatch):  # pylint: disable=unused-argument
         """Run pre-created testing profiles."""
 
         # initialize profile
-        self.init_profile(profile_name)
+        self.init_profile(profile_name, replace_outputs)
 
         # check profile env
         self.check_environment(self.profile.environments)
