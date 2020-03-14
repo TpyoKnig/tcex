@@ -10,9 +10,8 @@ class InstallJson:
 
     def __init__(self, filename=None, path=None):
         """Initialize class properties."""
-        self.filename = filename or 'install.json'
-        if path is not None:
-            self.filename = os.path.join(path, self.filename)
+        self._filename = filename or 'install.json'
+        self._path = path or os.getcwd()
 
         # properties
         self._contents = None
@@ -46,18 +45,30 @@ class InstallJson:
     def create_output_variables(self, output_variables, job_id=9876):
         """Create output variables.
 
+        # "#App:9876:app.data.count!String"
+        # "#Trigger:9876:app.data.count!String"
+
         Args:
             output_variables (dict): A dict of the output variables
             job_id (int): A job id to use in output variable string.
         """
         variables = []
         for p in output_variables:
-            # "#App:9876:app.data.count!String"
-            # "#Trigger:9876:app.data.count!String"
-            variables.append(
-                f"#{self.app_output_var_type}:{job_id}:{p.get('name')}!{p.get('type')}"
-            )
+            variables.append(self.create_variable(p.get('name'), p.get('type'), job_id))
         return variables
+
+    def create_variable(self, var_name, var_type, job_id=1234):
+        """Create output variables.
+
+        # "#App:9876:app.data.count!String"
+        # "#Trigger:9876:app.data.count!String"
+
+        Args:
+            var_name (str): The variable name.
+            var_type (str): The variable type.
+            job_id (int): A job id to use in output variable string.
+        """
+        return f'#{self.app_output_var_type}:{job_id}:{var_name}!{var_type}'
 
     @staticmethod
     def expand_valid_values(valid_values):
@@ -94,6 +105,11 @@ class InstallJson:
             valid_values.append('')
         return valid_values
 
+    @property
+    def filename(self):
+        """Return the fqpn for the layout.json file."""
+        return os.path.join(self._path, self._filename)
+
     def filter_params_dict(self, name=None, required=None, service_config=None, _type=None):
         """Return params as name/data dict."""
         params = {}
@@ -127,7 +143,7 @@ class InstallJson:
                 params.setdefault(p.get('name'), p)
         return params
 
-    # TOOD: should this be a property
+    # TODO: should this be a property
     def output_variables_dict(self):
         """Return output variables as name/data dict."""
         output_variables = {}
@@ -193,6 +209,43 @@ class InstallJson:
             if p.get('serviceConfig', False) is False:
                 params.setdefault(p.get('name'), p)
         return params
+
+    def update_schema(self, migrate=False):
+        """Update the profile to the current schema."""
+        with open(os.path.join(self.filename), 'r+') as fh:
+            json_data = json.load(fh)
+
+            # update all env variables to match latest pattern
+            json_data = self.update_schema_features(json_data)
+
+            if migrate:
+                json_data = self.update_schema_program_main(json_data)
+
+            # write updated profile
+            fh.seek(0)
+            fh.write(f'{json.dumps(json_data, indent=2, sort_keys=True)}\n')
+
+    def update_schema_features(self, json_data):
+        """Update feature set based on App type."""
+        features = self.features
+        if self.runtime_level.lower() in ['playbook']:
+            features = ['aotExecutionEnabled', 'appBuilderCompliant', 'secureParams']
+        elif self.runtime_level.lower() in ['triggerservice', 'webhooktriggerservice']:
+            features = ['appBuilderCompliant', 'fileParams', 'secureParams']
+
+        json_data['features'] = features
+
+        return json_data
+
+    def update_schema_program_main(self, json_data):
+        """Update program main on App type."""
+        if self.program_main:
+            if self.runtime_level.lower() in ['playbook']:
+                json_data['programMain'] = 'run'
+            if self.runtime_level.lower() in ['triggerservice', 'webhooktriggerservice']:
+                json_data['programMain'] = 'run.py'
+
+        return json_data
 
     #
     # properties

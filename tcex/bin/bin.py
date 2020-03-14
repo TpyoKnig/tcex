@@ -8,7 +8,7 @@ import sys
 import colorama as c
 import redis
 
-from ..app_config_object import InstallJson, LayoutJson, Profile
+from ..app_config_object import InstallJson, LayoutJson
 from ..app_config_object.permutations import Permutations
 
 
@@ -34,11 +34,7 @@ class Bin:
         self.exit_code = 0
         self.ij = InstallJson()
         self.lj = LayoutJson()
-        self.profile = Profile(
-            default_args={}, feature=self.args.feature, name=self.args.profile_name
-        )
         self.permutations = Permutations()
-        # self.output = []
 
         # initialize colorama
         c.init(autoreset=True, strip=False)

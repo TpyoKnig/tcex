@@ -5,12 +5,14 @@ import os
 import re
 import sys
 
+import colorama as c
 import hvac
 import jmespath
 
 from .install_json import InstallJson
 from .layout_json import LayoutJson
 from .permutations import Permutations
+from ..utils import Utils
 
 
 class Profile:
@@ -24,7 +26,7 @@ class Profile:
 
     def __init__(
         self,
-        default_args,
+        default_args=None,
         feature=None,
         name=None,
         redis_client=None,
@@ -33,7 +35,7 @@ class Profile:
         tcex_testing_context=None,
     ):
         """Initialize Class properties."""
-        self._default_args = default_args
+        self._default_args = default_args or {}
         self._feature = feature
         self._name = name
         self.replace_exit_message = replace_exit_message
@@ -80,7 +82,7 @@ class Profile:
             'exit_codes': profile_data.get('exit_codes', [0]),
             'exit_message': None,
             'outputs': profile_data.get('outputs'),
-            'stage': profile_data.get('stage', {'redis': {}, 'threatconnect': {}}),
+            'stage': profile_data.get('stage', {'kvstore': {}, 'threatconnect': {}}),
         }
         if self.ij.runtime_level.lower() == 'triggerservice':
             profile['configs'] = profile_data.get('configs')
@@ -93,7 +95,7 @@ class Profile:
 
         if self.ij.runtime_level.lower() == 'organization':
             profile['validation_criteria'] = profile_data.get('validation_criteria', {'percent': 5})
-            profile.pop('outputs')
+            del profile['outputs']
 
         with open(self.filename, 'w') as fh:
             json.dump(profile, fh, indent=2, sort_keys=sort_keys)
@@ -131,7 +133,7 @@ class Profile:
                     profile_data = json.load(fh)
 
                     # update profile schema
-                    profile_data = self.update_schema(profile_data)
+                    # profile_data = self.update_schema(profile_data)
 
                     # replace all variable references
                     profile_data = self.replace_env_variables(profile_data)
@@ -167,17 +169,31 @@ class Profile:
         return os.path.join(self._app_path, 'tests', self.feature)
 
     @property
-    def filename(self):
-        """Return profile fully qualified filename."""
-        return os.path.join(self.directory, f'{self.name}.json')
-
-    @property
     def feature(self):
         """Return the current feature."""
         if self._feature is None:
             # when called in testing framework get the feature from pytest env var.
             self._feature = self._test_case_data[0].split('/')[1].replace('/', '-')
         return self._feature
+
+    @property
+    def filename(self):
+        """Return profile fully qualified filename."""
+        return os.path.join(self.directory, f'{self.name}.json')
+
+    def init(self):
+        """Return the Data (dict) from the current profile."""
+        # update profile schema
+        profile_data = self.update_schema()
+
+        # replace all variable references
+        profile_data = self.replace_env_variables(profile_data)
+
+        # replace all staged variable
+        profile_data = self.replace_tc_variables(profile_data)
+
+        # set update profile data
+        self._data = profile_data
 
     @property
     def name(self):
@@ -191,6 +207,58 @@ class Profile:
     def name(self, name):
         """Set the profile name"""
         self._name = name
+
+    def replace_env_variables(self, profile_data):
+        """Update the profile to the current schema.
+
+        Args:
+            profile_data (dict): The profile data dict.
+
+        Returns:
+            dict: The updated dict.
+        """
+        profile = json.dumps(profile_data)
+
+        for m in re.finditer(r'\${(env|os|vault):(.*?)}', profile):
+            try:
+                full_match = m.group(0)
+                env_type = m.group(1)  # currently env, os, or vault
+                env_key = m.group(2)
+
+                if env_type in ['env', 'os'] and os.getenv(env_key):
+                    profile = profile.replace(full_match, env_key)
+                elif env_type in ['env', 'vault'] and self.vault_client.read(env_key):
+                    profile = profile.replace(full_match, self.vault_client.read(env_key))
+            except IndexError:
+                print(f'Invalid variable found {full_match}.')
+        return json.loads(profile)
+
+    def replace_tc_variables(self, profile_data):
+        """Replace all of the TC output variables in the profile with their correct value.
+
+        Args:
+            profile_data (dict): The profile data dict.
+
+        Returns:
+            dict: The updated dict.
+        """
+        profile = json.dumps(profile_data)
+
+        for data in self.tc_staged_data:
+            key = data.get('key')
+            value = data.get('data')
+
+            for m in re.finditer(r'\${tcenv:' + str(key) + r':(.*?)}', profile):
+                try:
+                    full_match = m.group(0)
+                    jmespath_expression = m.group(1)
+
+                    if jmespath_expression:
+                        value = jmespath.search(jmespath_expression, value)
+                        profile = profile.replace(full_match, str(value))
+                except IndexError:
+                    print(f'Invalid variable found {full_match}.')
+        return json.loads(profile)
 
     @property
     def test_directory(self):
@@ -220,7 +288,8 @@ class Profile:
                 profile_data['exit_message'] = {'expected_output': message_tc, 'op': 'eq'}
 
                 fh.seek(0)
-                fh.write(json.dumps(profile_data, indent=2, sort_keys=True))
+                # fh.write(json.dumps(profile_data, indent=2, sort_keys=True))
+                fh.write(f'{json.dumps(profile_data, indent=2, sort_keys=True)}\n')
                 fh.truncate()
 
     def update_outputs(self):
@@ -235,37 +304,39 @@ class Profile:
             print('An instance of redis_client is not set.')
             sys.exit(1)
 
-        with open(self.filename, 'r+') as fh:
-            profile_data = json.load(fh)
+        output_variables = self.ij.output_variable_array
+        if self.lj.has_layout:
+            # if layout based App get valid outputs
+            output_variables = self.ij.create_output_variables(
+                self.permutations.outputs_by_inputs(self.args)
+            )
 
-            output_variables = self.ij.output_variable_array
-            if self.lj.has_layout:
-                # if layout based App get valid outputs
-                output_variables = self.ij.create_output_variables(
-                    self.permutations.outputs_by_inputs(self.args)
-                )
+        outputs = {}
+        for context in self.context_tracker:
+            # get all current keys in current context
+            redis_data = self.redis_client.hgetall(context)
+            trigger_id = self.redis_client.hget(context, '_trigger_id')
 
-            outputs = {}
-            for context in self.context_tracker:
-                # get all current keys in current context
-                redis_data = self.redis_client.hgetall(context)
-                trigger_id = self.redis_client.hget(context, '_trigger_id')
+            # updated outputs with validation data
+            self.update_outputs_variables(outputs, output_variables, redis_data, trigger_id)
 
-                # updated outputs with validation data
-                self.update_outputs_variables(outputs, output_variables, redis_data, trigger_id)
-
-                # cleanup redis
-                self.clear_context(context)
-
-            print('self.replace_outputs', self.replace_outputs)
-            # write updated profile
-            if self.outputs is None or self.replace_outputs:
-                profile_data['outputs'] = outputs
-                fh.seek(0)
-                fh.write(f'{json.dumps(profile_data, indent=2, sort_keys=True)}\n')
+            # cleanup redis
+            self.clear_context(context)
 
         # update _data dict with updated profile
-        self._data = json.dumps(profile_data)
+
+        if self.outputs is None or self.replace_outputs:
+            with open(self.filename, 'r') as fh:
+                profile_data = json.load(fh)
+
+            with open(self.filename, 'w') as fh:
+                profile_data['outputs'] = outputs
+                fh.write(f'{json.dumps(profile_data, indent=2, sort_keys=True)}\n')
+            # TODO: wth
+            # with open(self.filename, 'r+') as fh:
+            #     profile_data = json.load(fh)
+            #     fh.seek(0)
+            #     fh.write(f'{json.dumps(profile_data, indent=2, sort_keys=True)}\n')
 
     def update_outputs_variables(self, outputs, output_variables, redis_data, trigger_id):
         """Return the outputs section of a profile.
@@ -315,58 +386,10 @@ class Profile:
             else:
                 outputs[variable] = output_data
 
-    def replace_env_variables(self, profile_data):
-        """Update the profile to the current schema.
-
-        Args:
-            profile_data (dict): The profile data dict.
-
-        Returns:
-            dict: The updated dict.
-        """
-        profile = json.dumps(profile_data)
-
-        for m in re.finditer(r'\${(env|os|vault):(.*?)}', profile):
-            try:
-                full_match = m.group(0)
-                env_type = m.group(1)  # currently env, os, or vault
-                env_key = m.group(2)
-
-                if env_type in ['env', 'os'] and os.getenv(env_key):
-                    profile = profile.replace(full_match, env_key)
-                elif env_type in ['env', 'vault'] and self.vault_client.read(env_key):
-                    profile = profile.replace(full_match, self.vault_client.read(env_key))
-            except IndexError:
-                print(f'Invalid variable found {full_match}.')
-        return json.loads(profile)
-
-    def replace_tc_variables(self, profile_data):
-        """Replace all of the TC output variables in the profile with their correct value.
-
-        Args:
-            profile_data (dict): The profile data dict.
-
-        Returns:
-            dict: The updated dict.
-        """
-        profile = json.dumps(profile_data)
-
-        for key, value in self.tc_staged_data.items():
-            for m in re.finditer(r'\${tcenv:' + str(key) + r':(.*?)}', profile):
-                try:
-                    full_match = m.group(0)
-                    jmespath_expression = m.group(1)
-
-                    if jmespath_expression:
-                        value = jmespath.search(jmespath_expression, value)
-                        profile = profile.replace(full_match, str(value))
-                except IndexError:
-                    print(f'Invalid variable found {full_match}.')
-        return json.loads(profile)
-
-    def update_schema(self, profile_data):
+    def update_schema(self):
         """Update the profile to the current schema."""
-        with open(self.filename, 'r+') as fh:
+        with open(os.path.join(self.filename), 'r+') as fh:
+            profile_data = json.load(fh)
 
             # update all env variables to match latest pattern
             profile_data = self.update_schema_variable_pattern_env(profile_data)
@@ -421,7 +444,8 @@ class Profile:
         """
         profile = json.dumps(profile_data)
 
-        for key in self.tc_staged_data:
+        for data in self.tc_staged_data:
+            key = data.get('key')
             for m in re.finditer(r'\${tcenv\.' + str(key) + r'\.(.*?)}', profile):
                 try:
                     full_match = m.group(0)
@@ -449,8 +473,9 @@ class Profile:
         if profile_data.get('stage') is None:
             return profile_data
 
-        kvstore_data = profile_data.get('stage').pop('redis', None)
-        if kvstore_data:
+        kvstore_data = profile_data['stage'].get('redis', None)
+        if kvstore_data is not None:
+            del profile_data['stage']['redis']
             profile_data['stage']['kvstore'] = kvstore_data
 
         return profile_data
@@ -605,3 +630,251 @@ class Profile:
     def webhook_event(self):
         """Return outputs dict."""
         return self.data.get('webhook_event', {})
+
+
+class ProfileInteractive:
+    """Testing Profile Interactive Class.
+
+    Args:
+        profile (Profile): The profile object to build interactive inputs.
+    """
+
+    def __init__(
+        self, profile,
+    ):
+        """Initialize Class properties."""
+        self.profile = profile
+        self.input_type_map = {
+            'boolean': self.present_boolean,
+            'choice': self.present_choice,
+            'keyvaluelist': self.present_key_value_list,
+            'Multichoice': self.present_multichoice,
+            'string': self.present_string,
+        }
+        self.utils = Utils()
+        self._inputs = {
+            'optional': {},
+            'required': {},
+        }
+        self._staging_data = {'kvstore': {}}
+
+    def _default(self, data):
+        """Return the best option for default."""
+        if data.get('type').lower() == 'boolean':
+            default = data.get('default', 'false')
+        elif data.get('type').lower() == 'choice':
+            default = None
+            valid_values = self.profile.ij.expand_valid_values(data.get('validValues', []))
+            if data.get('name') == 'tc_action':
+                for vv in valid_values:
+                    if self.profile.feature.lower() == vv.lower():
+                        default = vv
+            else:
+                default = data.get('default')
+        elif data.get('type').lower() == 'multichoice':
+            default = data.get('default').split('|')
+        else:
+            default = data.get('default', '')
+        return default
+
+    @staticmethod
+    def _split_list(data):
+        """Split a list in two "equal" parts."""
+        half = int(len(data) / 2)
+        return data[:half], data[half:]
+
+    def add_input(self, name, data, value):
+        """Add an input to inputs."""
+        if data.get('required', False):
+            self._inputs['required'].setdefault(name, value)
+        else:
+            self._inputs['optional'].setdefault(name, value)
+
+    @property
+    def inputs(self):
+        """Return inputs dict."""
+        return self._inputs
+
+    def present(self):
+        """Present interactive menu to build profile."""
+        inputs = {}
+        for name, data in self.profile.ij.params_dict.items():
+            if inputs:
+                if not self.profile.permutations.validate_input_variable(name, inputs):
+                    continue
+
+            # present the input
+            value = self.input_type_map.get(data.get('type').lower())(name, data)
+
+            # update inputs
+            inputs[name] = value
+
+    def present_boolean(self, name, data):
+        """Build a question for boolean input."""
+        default = self._default(data)
+        label = data.get('label')
+        valid_values = ['true', 'false']
+
+        option_default = 'false'
+        option_text = ''
+        options = []
+        for v in valid_values:
+            if v.lower() == default.lower():
+                option_default = v
+                v = f'[{v}]'
+            options.append(v)
+        option_text = f" {'/'.join(options)}"
+
+        print(f'\n{c.Fore.CYAN}{label}')
+        print('-' * 50)
+        message = f'{c.Fore.MAGENTA}Choice{option_text}: '
+        value = input(message)
+        if not value:
+            value = option_default
+        value = self.utils.to_bool(value)
+
+        # user feedback
+        print(f'{c.Fore.CYAN}- Using value "{value}"\n')
+
+        # add input
+        self.add_input(name, data, value)
+
+        return value
+
+    def present_choice(self, name, data):
+        """Build a question for choice input."""
+        default = self._default(data)
+        label = data.get('label')
+        valid_values = self.profile.ij.expand_valid_values(data.get('validValues', []))
+
+        # get default value, default text, and options
+        option_default = 0
+        option_text = ''
+        options = []
+        for i, v in enumerate(valid_values):
+            if v == default:
+                option_default = i
+                option_text = f' [{i}]'
+            options.append(f'{i}. {v}')
+
+        # show the input
+        print(f'\n{c.Fore.CYAN}{label}')
+        print('-' * 50)
+        left, right = self._split_list(options)
+        for i, _ in enumerate(len(left)):
+            ld = left[i]
+            try:
+                rd = right[i]
+            except IndexError:
+                rd = ''
+            print(f'{ld:40} {rd:40}')
+        message = f'{c.Fore.MAGENTA}Choice{option_text}: '
+        value = input(message).strip()
+        if not value:
+            value = option_default
+
+        # get value from valid value index
+        try:
+            value = valid_values[int(value)]
+        except TypeError:
+            print(f'{c.Fore.RED}Invalid value of {value} provided.')
+            sys.exit(1)
+
+        # user feedback
+        print(f'{c.Fore.CYAN}- Using value "{value}"\n')
+
+        # add input
+        self.add_input(name, data, value)
+
+        return value
+
+    def present_key_value_list(self, name, data):
+        """Build a question for key value list input."""
+        # add input
+        variable = self.profile.ij.create_variable(data.get('name'), data.get('type'))
+        self.add_input(name, data, variable)
+        self._staging_data['kvstore'].setdefault(variable, [{'key': '', 'value': ''}])
+
+        return variable
+
+    def present_multichoice(self, name, data):
+        """Build a question for choice input."""
+        default = self._default(data)
+        label = data.get('label')
+        valid_values = self.profile.ij.expand_valid_values(data.get('validValues', []))
+
+        option_default = []
+        option_text = ''
+        options = []
+        for i, v in enumerate(valid_values):
+            if v in default:
+                option_default.append(i)
+                option_text += f' [{v}]'
+            options.append(f'{i:02}. {v}\n')
+
+        print(f'\n{c.Fore.CYAN}{label}')
+        print('-' * 50)
+        message = f'{c.Fore.MAGENTA}Choice{option_text}: '
+        value = input(message)
+        if not value and option_default:
+            value = option_default
+        else:
+            value = value.split(',')
+
+        # get value from valid value index
+        values = []
+        for v in value:
+            try:
+                index = int(v.strip())
+            except TypeError:
+                print(f'{c.Fore.RED}Invalid value of {v} provided.')
+                sys.exit(1)
+            values.append(valid_values[index])
+        delimited_values = '|'.join(values)
+
+        # user feedback
+        print(f'{c.Fore.CYAN}- Using value "{value}"\n')
+
+        # add input
+        self.add_input(name, data, delimited_values)
+
+        return delimited_values
+
+    def present_string(self, name, data):
+        """Build a question for boolean input."""
+        default = self._default(data)
+        label = data.get('label')
+
+        option_text = ''
+        if default is not None:
+            option_default = default
+            option_text = f' [{default}]'
+
+        print(f'\n{c.Fore.CYAN}{label}')
+        print('-' * 50)
+        message = f'{c.Fore.MAGENTA}Choice{option_text}: '
+        value = input(message)
+        if not value:
+            value = option_default
+
+        feedback_value = value
+        input_value = value
+        if 'String' in data.get('playbookDataType', []):
+            # create variable and staging data
+            variable = self.profile.ij.create_variable(data.get('name'), data.get('type'))
+            self._staging_data['kvstore'].setdefault(variable, value)
+            feedback_value = f'"{value}" - ({variable})'
+            input_value = variable
+
+        # user feedback
+        print(f'{c.Fore.CYAN}- Using value {feedback_value}\n')
+
+        # add input
+        self.add_input(name, data, input_value)
+
+        return value
+
+    @property
+    def staging_data(self):
+        """Return staging data dict."""
+        return self._staging_data

@@ -128,7 +128,7 @@ class Utils:
         Returns:
             bool: The boolean value
         """
-        return str(value).lower() in ['1', 't', 'true']
+        return str(value).lower() in ['1', 't', 'true', 'y', 'yes']
 
     @staticmethod
     def flatten_list(lst: List[Any]) -> List[Any]:

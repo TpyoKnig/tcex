@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Custom test method Class for app_type -> ${app_type}."""
+"""Custom test method Class for runtime_level -> ${runtime_level}."""
 
 
 # pylint: disable=no-self-use,unused-argument
@@ -11,7 +11,7 @@ class Custom(object):
 
     def setup_class(self, test_feature):
         """Run setup class code."""
-        % if app_type in ['triggerservice', 'webhooktriggerservice']:
+        % if runtime_level in ['triggerservice', 'webhooktriggerservice']:
         test_feature.args = {}
 
         # uncomment and modify to control sleep times
@@ -35,7 +35,7 @@ class Custom(object):
     def teardown_method(self, test_feature):
         """Run teardown method code."""
 
-    % if app_type in ['triggerservice']:
+    % if runtime_level in ['triggerservice']:
     def trigger_method(self, test_feature, profile_data, monkeypatch):  # pylint: disable=useless-super-delegation
         """Perform action to trigger the event."""
         # trigger = profile_data.get('trigger')
@@ -46,7 +46,7 @@ class Custom(object):
     def test_pre_delete_config(self, test_feature, profile_data, monkeypatch):  # pylint: disable=useless-super-delegation
         """Run test method code before delete configs."""
 
-    % elif app_type in ['webhooktriggerservice']:
+    % elif runtime_level in ['webhooktriggerservice']:
     def test_pre_create_config(self, test_feature, profile_data, monkeypatch):  # pylint: disable=useless-super-delegation
         """Run test method code before create configs."""
 

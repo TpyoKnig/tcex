@@ -198,9 +198,13 @@ class TestCase:
         self._staged_tc_data = self.stager.threatconnect.entities(
             self._profile.stage_threatconnect, self._profile.owner
         )
+        print('stage_tc_data', self._staged_tc_data)
 
         # insert staged data for replacement
         self._profile.tc_staged_data = self._staged_tc_data
+
+        # update schema
+        self._profile.init()
 
         # stage kvstore data based on current profile
         self.stager.redis.from_dict(self._profile.stage_kvstore)

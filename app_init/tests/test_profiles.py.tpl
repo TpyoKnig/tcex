@@ -47,7 +47,7 @@ class TestProfiles(${class_name}):
             self.custom.teardown_method(self)
         super(TestProfiles, self).teardown_method()
 
-    % if app_type in ['triggerservice', 'webhooktriggerservice']:
+    % if runtime_level in ['triggerservice', 'webhooktriggerservice']:
     @pytest.mark.parametrize('profile_name', profile_names)
     def test_profiles(
         self, profile_name, replace_exit_message, replace_outputs, monkeypatch
@@ -64,7 +64,7 @@ class TestProfiles(${class_name}):
         for config in self.profile.configs:
             self.publish_create_config(config)
 
-        % if app_type == 'webhooktriggerservice':
+        % if runtime_level == 'webhooktriggerservice':
         # call pre-configuration setup per test
         self.custom.test_pre_webhook(self, self.profile.data, monkeypatch)
 
@@ -116,7 +116,7 @@ class TestProfiles(${class_name}):
 
         assert self.run_profile() in self.profile.exit_codes
 
-        % if app_type=='organization':
+        % if runtime_level=='organization':
         self.validator.threatconnect.batch(
             self.context, self.profile.owner, self.profile.validation_criteria
         )

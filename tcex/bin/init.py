@@ -5,9 +5,9 @@ import json
 import os
 
 import colorama as c
-import requests
 
 from .bin import Bin
+from ..app_config_object.templates import DownloadTemplates
 
 
 class Init(Bin):
@@ -24,110 +24,7 @@ class Init(Bin):
             _args (namespace): The argparser args Namespace.
         """
         super().__init__(_args)
-
-        # properties
-        self.base_url = (
-            'https://raw.githubusercontent.com/ThreatConnect-Inc/tcex/'
-            f'{self.args.branch}/app_init/'
-        )
-
-    @staticmethod
-    def _print_results(file, status):
-        """Print the download results.
-
-        Args:
-            file (str): The filename.
-            status (str): The file download status.
-        """
-
-        file_color = c.Fore.GREEN
-        status_color = c.Fore.RED
-        if status == 'Success':
-            status_color = c.Fore.GREEN
-        elif status == 'Skipped':
-            status_color = c.Fore.YELLOW
-        print(
-            f"{c.Fore.CYAN}{'Downloading:'!s:<13}{file_color}{file!s:<35}"
-            f"{c.Fore.CYAN}{'Status:'!s:<8}{status_color}{status}"
-        )
-
-    @staticmethod
-    def _confirm_overwrite(filename):
-        """Confirm overwrite of template files.
-
-        Make sure the user would like to continue downloading a file which will overwrite a file
-        in the current directory.
-
-        Args:
-            filename (str): The name of the file to overwrite.
-
-        Returns:
-            bool: True if the user specifies a "yes" response.
-        """
-
-        message = (
-            f'{c.Fore.MAGENTA}Would you like to overwrite the contents of {filename} (y/[n])? '
-        )
-        response = input(message)
-        response = response.lower()
-
-        if response in ['y', 'yes']:
-            return True
-        return False
-
-    def check_empty_app_dir(self):
-        """Check to see if the directory in which the app is going to be created is empty."""
-        if not os.listdir(self.app_path):
-            self.handle_error(
-                'No app exists in this directory. Try using "tcinit --template '
-                f'{self.args.template} --action create" to create an app.'
-            )
-
-    def download_file(self, remote_filename, local_filename=None):
-        """Download file from github.
-
-        Args:
-            remote_filename (str): The name of the file as defined in git repository.
-            local_filename (str, optional): Defaults to None. The name of the file as it should be
-                be written to local filesystem.
-        """
-        status = 'Failed'
-        if local_filename is None:
-            local_filename = remote_filename
-
-        if not self.args.force and os.access(local_filename, os.F_OK):
-            if not self._confirm_overwrite(local_filename):
-                self._print_results(local_filename, 'Skipped')
-                return
-
-        url = f'{self.base_url}{remote_filename}'
-        r = requests.get(url, allow_redirects=True)
-        if r.ok:
-            open(local_filename, 'wb').write(r.content)
-            status = 'Success'
-        else:
-            self.handle_error(f'Error requesting: {url}', False)
-
-        # print download status
-        self._print_results(local_filename, status)
-
-    @staticmethod
-    def update_install_json():
-        """Update the install.json configuration file if exists."""
-        if not os.path.isfile('install.json'):
-            return
-
-        with open('install.json', 'r') as f:
-            install_json = json.load(f)
-
-        if install_json.get('programMain'):
-            install_json['programMain'] = 'run'
-
-        # update features
-        install_json['features'] = ['aotExecutionEnabled', 'appBuilderCompliant', 'secureParams']
-
-        with open('install.json', 'w') as f:
-            json.dump(install_json, f, indent=2, sort_keys=True)
+        self.download_template = DownloadTemplates(self.args.branch)
 
     def update_tcex_json(self):
         """Update the tcex.json configuration file if exists."""

@@ -170,6 +170,10 @@ class Permutations:
         cur = self.db_conn.cursor()
         cur.execute(sql)
 
+    def exists(self):
+        """Return True if permutation file exists."""
+        return os.path.isfile(self.filename)
+
     @property
     def filename(self):
         """Return all output permutations for current App."""
@@ -267,6 +271,37 @@ class Permutations:
 
         # output permutations
         self.write_permutations_file()
+
+    def validate_input_variable(self, input_name, inputs):
+        """Return True if the provided variables display where clause returns results.
+
+        Args:
+            input_name (dict): The input variable name (e.g. tc_action).
+            inputs (dict): The current name/value dict.
+
+        Returns:
+            bool: True if the display value returns results.
+        """
+        table = f'temp_{random.randint(100,999)}'
+        self.db_create_table(table, self.ij.params_dict.keys())
+        self.db_insert_record(table, self.ij.params_dict.keys())
+
+        for name, val in inputs.items():
+            self.db_update_record(table, name, val)
+
+        lj_data = self.lj.parameters_dict.get(input_name)
+        if lj_data is None:
+            # this shouldn't happen as all ij inputs must be in lj
+            raise RuntimeError(f'The provided input {input_name} was not found in layout.json.')
+        display = lj_data.get('display')
+
+        # check if provided variable meets display requirements
+        valid = self.validate_layout_display(table, display)
+
+        # cleanup temp table
+        self.db_drop_table(table)
+
+        return valid
 
     def validate_layout_display(self, table, display_condition):
         """Check to see if the display condition passes.
