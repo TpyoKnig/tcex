@@ -79,38 +79,44 @@ args, extra_args = parser.parse_known_args()
 
 
 if __name__ == '__main__':
-    if not args.template and not os.listdir(os.getcwd()) and not args.update:
-        print(
-            f'{c.Fore.YELLOW}The --template <template type> CLI arg is required when creating a '
-            f'new App. If trying to update an existing App please provide the --update CLI flag.'
-        )
-        sys.exit(1)
-    elif not os.listdir(os.getcwd()) and args.update:
-        print(f'{c.Fore.YELLOW}The are no files to update. Try removing --update CLI flag.')
-        sys.exit(1)
-
-    if os.listdir(os.getcwd()) and not args.update:
-        print(
-            f'{c.Fore.YELLOW}The current directory does not appear to be empty. Please initialize '
-            f'App in an empty directory. If migrating an older App try the --migrate CLI flag or'
-            f'if updating an App try the --update CLI flag.'
-        )
-        sys.exit(1)
-    elif os.listdir(os.getcwd()) and not os.getenv('TC_DEVELOPER'):
-        print(
-            f'{c.Fore.YELLOW}The current directory does not appear to be empty. Updating files '
-            f'can cause loss of data. It is STRONGLY recommend you commit/backup all your changes '
-            f'before proceeding.'
-        )
-        message = f'Continue (yes/[no]): '
-        response = input(message).strip()
-        if response not in ['y', 'yes']:
-            sys.exit()
-
-    print(f'{c.Style.BRIGHT}Using files from {c.Fore.CYAN}"{args.branch}"{c.Fore.RESET} branch')
-
     try:
         tci = Init(args)
+
+        if not args.template and not os.listdir(os.getcwd()) and not args.update:
+            tci.print_message(
+                f'The --template <template type> CLI arg is required when creating a new App. If '
+                f'trying to update an existing App please provide the --update CLI flag.',
+                c.Fore.YELLOW,
+            )
+            sys.exit(1)
+        elif not os.listdir(os.getcwd()) and args.update:
+            tci.print_message(
+                f'The are no files to update. Try removing --update CLI flag.', c.Fore.YELLOW,
+            )
+            sys.exit(1)
+
+        if os.listdir(os.getcwd()) and not args.update:
+            tci.print_message(
+                f'The current directory does not appear to be empty. Please initialize the App in '
+                f'an empty directory. If migrating an older App try the --migrate CLI flag or if '
+                f'updating an App try the --update CLI flag.',
+                c.Fore.YELLOW,
+            )
+            sys.exit(1)
+        elif os.listdir(os.getcwd()) and not os.getenv('TC_DEVELOPER'):
+            tci.print_message(
+                f'The current directory does not appear to be empty. Updating files can cause loss '
+                f'of data. It is STRONGLY recommend you commit/backup all your changes before '
+                f'proceeding. To disable this message set the TC_DEVELOPER environment variable '
+                f'(e.g. export TC_DEVELOPER=1).',
+                c.Fore.YELLOW,
+            )
+            message = f'Continue (yes/[no]): '
+            response = input(message).strip()
+            if response not in ['y', 'yes']:
+                sys.exit()
+
+        print(f'{c.Style.BRIGHT}Using files from {c.Fore.CYAN}"{args.branch}"{c.Fore.RESET} branch')
 
         # download common files
         tci.download_template.init_common_files(args.template)
@@ -129,10 +135,22 @@ if __name__ == '__main__':
         if (args.update or args.migrate) and not args.template.startswith('external'):
             tci.ij.update_schema(migrate=args.migrate)
 
-        if args.update:
-            tci.update_tcex_json()
-
+        # print results
         tci.download_template.print_download_results()
+
+        # update install.json
+        tci.ij.update_schema()
+
+        # update tcex.json
+        tci.tj.update()
+
+        # provide helpful user info
+        print(
+            f'{c.Style.BRIGHT}{c.Fore.GREEN}'
+            f'Please update package.app_name in tcex.json before packaging the App.'
+        )
+
+        # cleanly exit
         sys.exit()
 
     except Exception:

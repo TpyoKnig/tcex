@@ -288,7 +288,6 @@ class Profile:
                 profile_data['exit_message'] = {'expected_output': message_tc, 'op': 'eq'}
 
                 fh.seek(0)
-                # fh.write(json.dumps(profile_data, indent=2, sort_keys=True))
                 fh.write(f'{json.dumps(profile_data, indent=2, sort_keys=True)}\n')
                 fh.truncate()
 
@@ -324,19 +323,13 @@ class Profile:
             self.clear_context(context)
 
         # update _data dict with updated profile
-
         if self.outputs is None or self.replace_outputs:
-            with open(self.filename, 'r') as fh:
+            with open(self.filename, 'r+') as fh:
                 profile_data = json.load(fh)
 
-            with open(self.filename, 'w') as fh:
-                profile_data['outputs'] = outputs
+                fh.seek(0)
                 fh.write(f'{json.dumps(profile_data, indent=2, sort_keys=True)}\n')
-            # TODO: wth
-            # with open(self.filename, 'r+') as fh:
-            #     profile_data = json.load(fh)
-            #     fh.seek(0)
-            #     fh.write(f'{json.dumps(profile_data, indent=2, sort_keys=True)}\n')
+                fh.truncate()
 
     def update_outputs_variables(self, outputs, output_variables, redis_data, trigger_id):
         """Return the outputs section of a profile.
@@ -406,6 +399,7 @@ class Profile:
             # write updated profile
             fh.seek(0)
             fh.write(f'{json.dumps(profile_data, indent=2, sort_keys=True)}\n')
+            fh.truncate()
 
         return profile_data
 

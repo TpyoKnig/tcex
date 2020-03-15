@@ -2,6 +2,7 @@
 """TcEx Framework InstallJson Object."""
 import json
 import os
+import uuid
 from collections import OrderedDict
 
 
@@ -15,6 +16,33 @@ class InstallJson:
 
         # properties
         self._contents = None
+
+    @property
+    def _commit_hash(self):
+        """Return the current commit hash if available.
+
+        This is not a required task so best effort is fine. In other words this is not guaranteed
+        to work 100% of the time.
+        """
+        commit_hash = None
+        branch = None
+        branch_file = '.git/HEAD'  # ref: refs/heads/develop
+
+        # get current branch
+        if os.path.isfile(branch_file):
+            with open(branch_file, 'r') as f:
+                try:
+                    branch = f.read().strip().split('/')[2]
+                except IndexError:
+                    pass
+
+            # get commit hash
+            if branch:
+                hash_file = f'.git/refs/heads/{branch}'
+                if os.path.isfile(hash_file):
+                    with open(hash_file, 'r') as f:
+                        commit_hash = f.read().strip()
+        return commit_hash
 
     @staticmethod
     def _to_bool(value):
@@ -30,6 +58,19 @@ class InstallJson:
         if self.runtime_level.lower() in ['triggerservice', 'webhooktriggerservice']:
             return 'Trigger'
         return 'App'
+
+    @property
+    def app_prefix(self):
+        """Return the appropriate output var type for the current App."""
+        if self.runtime_level.lower() == 'organization':
+            return 'TC_-_'
+        if self.runtime_level.lower() == 'playbook':
+            return 'TCPB_-_'
+        if self.runtime_level.lower() == 'triggerservice':
+            return 'TCVC_-_'
+        if self.runtime_level.lower() == 'webhooktriggerservice':
+            return 'TCVW-_'
+        return ''
 
     @property
     def contents(self):
@@ -212,29 +253,75 @@ class InstallJson:
 
     def update_schema(self, migrate=False):
         """Update the profile to the current schema."""
-        with open(os.path.join(self.filename), 'r+') as fh:
+        with open(self.filename, 'r+') as fh:
             json_data = json.load(fh)
 
-            # update all env variables to match latest pattern
+            # update appId field
+            json_data = self.update_schema_app_id(json_data)
+
+            # update commitHash field
+            json_data = self.update_schema_commit_hash(json_data)
+
+            # update displayName field
+            json_data = self.update_schema_display_name(json_data)
+
+            # update features array
             json_data = self.update_schema_features(json_data)
 
             if migrate:
+                # update programMain to run
                 json_data = self.update_schema_program_main(json_data)
 
             # write updated profile
             fh.seek(0)
             fh.write(f'{json.dumps(json_data, indent=2, sort_keys=True)}\n')
+            fh.truncate()
+
+        self._contents = json_data
+
+    @staticmethod
+    def update_schema_app_id(json_data):
+        """Update schema to ensure an appId field exists.
+
+        All App should have an appId to uniquely identify the App. this is not intended to be
+        used by core to identify an App.  using appId + major Version could be used for unique
+        App identification in core in a future release.
+        """
+        if json_data.get('appId') is None:
+            json_data['appId'] = str(
+                uuid.uuid5(uuid.NAMESPACE_X500, os.path.basename(os.getcwd()).lower())
+            )
+        return json_data
+
+    def update_schema_commit_hash(self, json_data):
+        """Update schema to ensure an appId field exists.
+
+        Add/Update the commit hash to the install.json file if possible.
+        """
+        if self._commit_hash:
+            json_data['commitHash'] = self._commit_hash
+        return json_data
+
+    def update_schema_display_name(self, json_data):
+        """Update the displayName parameter."""
+        if not json_data.get('displayName'):
+            display_name = os.path.basename(os.getcwd()).replace(self.app_prefix, '')
+            display_name = display_name.replace('_', ' ').replace('-', ' ')
+            display_name = ' '.join([a.title() for a in display_name.split(' ')])
+            json_data['displayName'] = display_name
+        return json_data
 
     def update_schema_features(self, json_data):
         """Update feature set based on App type."""
         features = self.features
-        if self.runtime_level.lower() in ['playbook']:
+        if self.runtime_level.lower() in ['organization']:
+            features = ['secureParams']
+        elif self.runtime_level.lower() in ['playbook']:
             features = ['aotExecutionEnabled', 'appBuilderCompliant', 'secureParams']
         elif self.runtime_level.lower() in ['triggerservice', 'webhooktriggerservice']:
             features = ['appBuilderCompliant', 'fileParams', 'secureParams']
 
         json_data['features'] = features
-
         return json_data
 
     def update_schema_program_main(self, json_data):
@@ -242,9 +329,8 @@ class InstallJson:
         if self.program_main:
             if self.runtime_level.lower() in ['playbook']:
                 json_data['programMain'] = 'run'
-            if self.runtime_level.lower() in ['triggerservice', 'webhooktriggerservice']:
-                json_data['programMain'] = 'run.py'
-
+            elif self.runtime_level.lower() in ['triggerservice', 'webhooktriggerservice']:
+                json_data['programMain'] = 'run'
         return json_data
 
     #
@@ -349,7 +435,7 @@ class InstallJson:
     @property
     def program_version(self):
         """Return property."""
-        return self.contents.get('programVersion')
+        return self.contents.get('programVersion', '1.0.0')
 
     @property
     def publish_out_files(self):

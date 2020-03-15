@@ -8,7 +8,7 @@ import sys
 import colorama as c
 import redis
 
-from ..app_config_object import InstallJson, LayoutJson
+from ..app_config_object import InstallJson, LayoutJson, TcexJson
 from ..app_config_object.permutations import Permutations
 
 
@@ -35,6 +35,7 @@ class Bin:
         self.ij = InstallJson()
         self.lj = LayoutJson()
         self.permutations = Permutations()
+        self.tj = TcexJson()
 
         # initialize colorama
         c.init(autoreset=True, strip=False)
@@ -50,6 +51,18 @@ class Bin:
         print(f'{c.Style.BRIGHT}{c.Fore.RED}{err}')
         if halt:
             sys.exit(1)
+
+    @staticmethod
+    def print_message(message, line_color=None, line_limit=100):
+        """Print the message ensuring lines don't exceed line limit."""
+        message_line = ''
+        for word in message.split(' '):
+            if len(message_line) + len(word) < line_limit:
+                message_line += f'{word} '
+            else:
+                print(f'{line_color}{message_line.rstrip()}')
+                message_line = f'{word} '
+        print(f'{line_color}{message_line.rstrip()}')
 
     def profile_settings_args_layout_json(self, required):
         """Return args based on layout.json and conditional rendering.

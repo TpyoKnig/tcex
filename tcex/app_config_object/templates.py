@@ -79,18 +79,25 @@ class DownloadTemplates:
         """Print the download results."""
         if self._download_results:
             # get the max length of url
+            destination_length = 0
+            destination_max = 50
             url_length = 0
             for r in self._download_results:
+                if len(r.get('destination')) > destination_length:
+                    destination_length = min(len(r.get('destination')) + 5, destination_max)
                 if len(r.get('url')) > url_length:
                     url_length = len(r.get('url')) + 5
 
             # title row
             print(
-                f"{c.Style.BRIGHT}{c.Fore.CYAN}{'URL:'!s:<{url_length}}"
-                f"{'Destination:'!s:<50}{'Status:'!s:<10}"
+                f"{c.Style.BRIGHT}{c.Fore.CYAN}{'Download URL:'!s:<{url_length}}"
+                f"{'Destination:'!s:<{destination_length}}"
+                f"{'Status:'!s:<10}"
             )
             for r in self._download_results:
-                destination = self._short_string(r.get('destination'), length=25)
+                destination = self._short_string(
+                    r.get('destination'), length=(destination_length - 5)
+                )
                 status = r.get('status')
                 url = r.get('url')
 
@@ -102,7 +109,11 @@ class DownloadTemplates:
                     status_color = f'{c.Style.BRIGHT}{c.Fore.YELLOW}'
 
                 # data row
-                print(f'{url!s:<{url_length}}{destination!s:<50}{status_color}{status!s:<10}')
+                print(
+                    f'{url!s:<{url_length}}'
+                    f'{destination!s:<{destination_length}}'
+                    f'{status_color}{status!s:<10}'
+                )
 
     @staticmethod
     def _short_string(string, length=65, prepend_ellipsis=True):
@@ -164,7 +175,7 @@ class DownloadTemplates:
 
         print(f"{c.Style.BRIGHT}{'File:'!s:<15}{c.Fore.CYAN}{self._short_string(destination)}")
         message = (
-            f'{c.Fore.MAGENTA}Overwrite '
+            f'{c.Fore.MAGENTA}Replace '
             f'{c.Style.BRIGHT}{c.Fore.WHITE}({option_text}):{c.Fore.RESET} '
         )
         response = input(message).strip()
