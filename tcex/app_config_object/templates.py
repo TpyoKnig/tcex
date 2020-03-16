@@ -313,7 +313,7 @@ class DownloadTemplates:
         """Download the profiles.py file."""
         if not self.profile:
             raise RuntimeError('Download of "profiles.py" requires a Profile object.')
-        url = f'{self.url}tests/profiles.py'
+        url = f'{self.url}/tests/profiles.py'
         destination = os.path.join(self.profile.test_directory, 'profiles.py')
         self.download_file(url, destination, overwrite=True)
 
@@ -452,7 +452,7 @@ class ValidationTemplates:
         """Render the templates and write to disk conditionally."""
         variables = {
             'feature': self.profile.feature,
-            'output_data': self.output_data(self.profile.output_variable_array),
+            'output_data': self.output_data(self.profile.ij.output_variable_array),
         }
 
         # render the parent "validate.py" template

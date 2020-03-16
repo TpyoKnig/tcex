@@ -279,12 +279,12 @@ class Playbooks(PlaybooksBase):
         if self.output_variables_by_type.get(key_type) is not None:
             # variable key-type has been requested
             v = self.output_variables_by_type.get(key_type)
-            self.tcex.log.info(f"Variable {v.get('variable')} was requested by downstream app.")
+            self.tcex.log.info(f"Variable {v.get('variable')} was requested by downstream App.")
             results = self.create(v.get('variable'), value)
         elif self.output_variables_by_name.get(key) is not None and variable_type is None:
             # variable key has been requested
             v = self.output_variables_by_name.get(key)
-            self.tcex.log.info(f"Variable {v.get('variable')} was requested by downstream app.")
+            self.tcex.log.info(f"Variable {v.get('variable')} was requested by downstream App.")
             results = self.create(v.get('variable'), value)
         else:
             self.tcex.log.trace(f'requested output variables: {self.output_variables_by_name}')

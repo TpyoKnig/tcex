@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """TcEx testing profile Class."""
 import json
+import logging
 import os
 import re
 import sys
@@ -13,6 +14,9 @@ from .install_json import InstallJson
 from .layout_json import LayoutJson
 from .permutations import Permutations
 from ..utils import Utils
+
+# autoreset colorama
+c.init(autoreset=True, strip=False)
 
 
 class Profile:
@@ -28,16 +32,20 @@ class Profile:
         self,
         default_args=None,
         feature=None,
+        merge_outputs=False,
         name=None,
         redis_client=None,
         replace_exit_message=False,
         replace_outputs=False,
         tcex_testing_context=None,
+        logger=None,
     ):
         """Initialize Class properties."""
         self._default_args = default_args or {}
         self._feature = feature
         self._name = name
+        self.log = logger or logging.getLogger('profile').addHandler(logging.NullHandler())
+        self.merge_outputs = merge_outputs
         self.replace_exit_message = replace_exit_message
         self.replace_outputs = replace_outputs
         self.tcex_testing_context = tcex_testing_context
@@ -68,6 +76,11 @@ class Profile:
         """Return partially parsed test case data."""
         return self._test_case_data[-1].replace('/', '-').replace('[', '-').replace(']', '')
 
+    def _write_file(self, json_data):
+        """Write updated profile file."""
+        with open(self.filename, 'w') as fh:
+            fh.write(f'{json.dumps(json_data, indent=2, sort_keys=True)}\n')
+
     def add(self, profile_data, profile_name=None, sort_keys=True):
         """Add a profile."""
         if profile_name is not None:
@@ -75,7 +88,7 @@ class Profile:
             self.name = profile_name
 
         if os.path.isfile(self.filename):
-            print('A profile with the name already exists.')
+            print(f'{c.Fore.RED}A profile with the name already exists.')
             sys.exit(1)
 
         profile = {
@@ -132,9 +145,6 @@ class Profile:
                 with open(os.path.join(self.filename), 'r') as fh:
                     profile_data = json.load(fh)
 
-                    # update profile schema
-                    # profile_data = self.update_schema(profile_data)
-
                     # replace all variable references
                     profile_data = self.replace_env_variables(profile_data)
 
@@ -143,9 +153,8 @@ class Profile:
 
                     # set update profile data
                     self._data = profile_data
-
             except OSError:
-                print(f'Could not open profile {self.filename}.')
+                print(f'{c.Fore.RED}Could not open profile {self.filename}.')
         self._data['name'] = self.name
         return self._data
 
@@ -230,7 +239,7 @@ class Profile:
                 elif env_type in ['env', 'vault'] and self.vault_client.read(env_key):
                     profile = profile.replace(full_match, self.vault_client.read(env_key))
             except IndexError:
-                print(f'Invalid variable found {full_match}.')
+                print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
         return json.loads(profile)
 
     def replace_tc_variables(self, profile_data):
@@ -257,7 +266,7 @@ class Profile:
                         value = jmespath.search(jmespath_expression, value)
                         profile = profile.replace(full_match, str(value))
                 except IndexError:
-                    print(f'Invalid variable found {full_match}.')
+                    print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
         return json.loads(profile)
 
     @property
@@ -300,7 +309,7 @@ class Profile:
         """
         if self.redis_client is None:
             # redis_client is only available for children of TestCasePlaybookCommon
-            print('An instance of redis_client is not set.')
+            print(f'{c.Fore.RED}An instance of redis_client is not set.')
             sys.exit(1)
 
         output_variables = self.ij.output_variable_array
@@ -322,14 +331,35 @@ class Profile:
             # cleanup redis
             self.clear_context(context)
 
+        # self.log.debug(f'replace_outputs: {self.replace_outputs}')
+        # self.log.debug(f'self.outputs: {self.outputs}')
         # update _data dict with updated profile
         if self.outputs is None or self.replace_outputs:
             with open(self.filename, 'r+') as fh:
-                profile_data = json.load(fh)
+                json_data = json.load(fh)
 
-                fh.seek(0)
-                fh.write(f'{json.dumps(profile_data, indent=2, sort_keys=True)}\n')
-                fh.truncate()
+            json_data['outputs'] = outputs
+            self._write_file(json_data)
+        elif self.merge_outputs:
+            if trigger_id:
+                pass
+            else:
+                # BCS we need to update with new keys and remove old
+                merged_outputs = {}
+                for key in list(outputs):
+                    if key in self.outputs:
+                        # use current value if exists
+                        self.log.error(f'self.outputs {self.outputs}')
+                        merged_outputs[key] = self.outputs[key]
+                        self.log.error(f'self.outputs[key] {self.outputs[key]}')
+                    else:
+                        merged_outputs[key] = outputs[key]
+
+                with open(self.filename, 'r+') as fh:
+                    json_data = json.load(fh)
+
+                json_data['outputs'] = merged_outputs
+                self._write_file(json_data)
 
     def update_outputs_variables(self, outputs, output_variables, redis_data, trigger_id):
         """Return the outputs section of a profile.
@@ -351,18 +381,14 @@ class Profile:
             # validate redis variables
             if data is None:
                 # log error for missing output data
-                # self.log.error(
-                #     f'[{self.profile_name}] Missing redis output for variable {variable}'
-                # )
-                print(f'[{self.name}] Missing redis output for variable {variable}')
+                self.log.error(f'[{self.name}] Missing redis output for variable {variable}')
             else:
                 data = json.loads(data.decode('utf-8'))
 
             # validate validation variables
             validation_data = (self.outputs or {}).get(variable)
             if trigger_id is None and validation_data is None and self.outputs:
-                # self.log.error(f'[{self.profile_name}] Missing validations rule: {variable}')
-                print(f'[{self.name}] Missing validations rule: {variable}')
+                self.log.error(f'[{self.name}] Missing validations rule: {variable}')
 
             # make business rules based on data type or content
             output_data = {'expected_output': data, 'op': 'eq'}
@@ -424,7 +450,7 @@ class Profile:
                 new_variable = f'${{{env_type}:{env_key}}}'
                 profile = profile.replace(full_match, new_variable)
             except IndexError:
-                print(f'Invalid variable found {full_match}.')
+                print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
         return json.loads(profile)
 
     def update_schema_variable_pattern_tcenv(self, profile_data):
@@ -448,7 +474,7 @@ class Profile:
                     new_variable = f'${{tcenv:{key}:{jmespath_expression}}}'
                     profile = profile.replace(full_match, new_variable)
                 except IndexError:
-                    print(f'Invalid variable found {full_match}.')
+                    print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
         return json.loads(profile)
 
     @staticmethod
@@ -617,12 +643,12 @@ class Profile:
 
     @property
     def validate_criteria(self):
-        """Return outputs dict."""
+        """Return validate criteria."""
         return self.data.get('validate_criteria', {})
 
     @property
     def webhook_event(self):
-        """Return outputs dict."""
+        """Return webhook event dict."""
         return self.data.get('webhook_event', {})
 
 

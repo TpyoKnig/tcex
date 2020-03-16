@@ -25,6 +25,8 @@ class Test(Bin):
     def __init__(self, _args):
         """Initialize Class properties."""
         super().__init__(_args)
+
+        # properties
         self.profile = Profile(
             default_args={}, feature=self.args.feature, name=self.args.profile_name
         )

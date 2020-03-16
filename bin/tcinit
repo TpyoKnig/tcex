@@ -86,12 +86,13 @@ if __name__ == '__main__':
             tci.print_message(
                 f'The --template <template type> CLI arg is required when creating a new App. If '
                 f'trying to update an existing App please provide the --update CLI flag.',
-                c.Fore.YELLOW,
+                line_color=c.Fore.YELLOW,
             )
             sys.exit(1)
         elif not os.listdir(os.getcwd()) and args.update:
             tci.print_message(
-                f'The are no files to update. Try removing --update CLI flag.', c.Fore.YELLOW,
+                f'The are no files to update. Try removing --update CLI flag.',
+                line_color=c.Fore.YELLOW,
             )
             sys.exit(1)
 
@@ -100,7 +101,7 @@ if __name__ == '__main__':
                 f'The current directory does not appear to be empty. Please initialize the App in '
                 f'an empty directory. If migrating an older App try the --migrate CLI flag or if '
                 f'updating an App try the --update CLI flag.',
-                c.Fore.YELLOW,
+                line_color=c.Fore.YELLOW,
             )
             sys.exit(1)
         elif os.listdir(os.getcwd()) and not os.getenv('TC_DEVELOPER'):
@@ -109,7 +110,7 @@ if __name__ == '__main__':
                 f'of data. It is STRONGLY recommend you commit/backup all your changes before '
                 f'proceeding. To disable this message set the TC_DEVELOPER environment variable '
                 f'(e.g. export TC_DEVELOPER=1).',
-                c.Fore.YELLOW,
+                line_color=c.Fore.YELLOW,
             )
             message = f'Continue (yes/[no]): '
             response = input(message).strip()
@@ -145,10 +146,13 @@ if __name__ == '__main__':
         tci.tj.update()
 
         # provide helpful user info
-        print(
-            f'{c.Style.BRIGHT}{c.Fore.GREEN}'
-            f'Please update package.app_name in tcex.json before packaging the App.'
-        )
+        if not args.update:
+            tci.print_message(
+                f'Please update displayName in install.json and package.app_name in tcex.json '
+                f'before packaging the App.',
+                line_bright=True,
+                line_color=c.Fore.GREEN,
+            )
 
         # cleanly exit
         sys.exit()

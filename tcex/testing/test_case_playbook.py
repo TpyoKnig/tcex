@@ -17,11 +17,6 @@ class TestCasePlaybook(TestCasePlaybookCommon):
         Returns:
             [type]: [description]
         """
-        # resolve env vars
-        # for k, v in args.items():
-        #     if isinstance(v, str):
-        #         args[k] = self.resolve_env_args(v)
-
         args['tc_playbook_out_variables'] = self.ij.output_variable_array
         self.log_data('run', 'args', args)
         self.app = self.app_init(args)
@@ -77,18 +72,10 @@ class TestCasePlaybook(TestCasePlaybookCommon):
 
     def run_profile(self):
         """Run an App using the profile name."""
-        # if isinstance(profile, str):
-        #     profile = self.init_profile(profile)
-
-        # build args from install.json
-        # args.update(profile.get('inputs', {}).get('required', {}))
-        # args.update(profile.get('inputs', {}).get('optional', {}))
-
         # run the App
         exit_code = self.run(self.profile.args)
 
         # add context for populating output variables
-        # self._context_tracker.append(self.context)
         self.profile.add_context(self.context)
 
         return exit_code

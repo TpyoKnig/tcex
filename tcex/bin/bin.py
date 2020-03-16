@@ -53,16 +53,19 @@ class Bin:
             sys.exit(1)
 
     @staticmethod
-    def print_message(message, line_color=None, line_limit=100):
+    def print_message(message, line_bright=False, line_color=None, line_limit=100):
         """Print the message ensuring lines don't exceed line limit."""
+        bright = ''
+        if line_bright:
+            bright = c.Style.BRIGHT
         message_line = ''
         for word in message.split(' '):
             if len(message_line) + len(word) < line_limit:
                 message_line += f'{word} '
             else:
-                print(f'{line_color}{message_line.rstrip()}')
+                print(f'{bright}{line_color}{message_line.rstrip()}')
                 message_line = f'{word} '
-        print(f'{line_color}{message_line.rstrip()}')
+        print(f'{bright}{line_color}{message_line.rstrip()}')
 
     def profile_settings_args_layout_json(self, required):
         """Return args based on layout.json and conditional rendering.

@@ -8,9 +8,16 @@ import pytest
 
 def pytest_addoption(parser):
     """Add arg flag to control replacement of outputs."""
+    parser.addoption('--merge_outputs', action='store_true')
     parser.addoption('--replace_exit_message', action='store_true')
     parser.addoption('--replace_outputs', action='store_true')
     parser.addoption('--update', action='store_true')
+
+
+@pytest.fixture()
+def merge_outputs(pytestconfig):
+    """Return the current value for merge_outputs args."""
+    return pytestconfig.getoption('merge_outputs')
 
 
 @pytest.fixture()

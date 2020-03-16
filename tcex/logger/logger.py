@@ -248,4 +248,7 @@ class Logger:
 
     def _log_tcex_path(self):
         """Log the current TcEx path."""
-        self.log.info(f'TcEx Path: {pathlib.Path().absolute()}')
+        app_path = str(pathlib.Path().parent.absolute())
+        full_path = str(pathlib.Path(__file__).parent.absolute())
+        tcex_path = os.path.dirname(full_path.replace(app_path, ''))
+        self.log.info(f'TcEx Path: {tcex_path}')

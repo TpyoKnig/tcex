@@ -34,8 +34,6 @@ class TestCase:
 
     _app_path = os.getcwd()
     _current_test = None
-    # _input_params = None
-    # _install_json = None
     _profile = None
     _stager = None
     _staged_tc_data = []
@@ -183,22 +181,25 @@ class TestCase:
             args['tc_token_expires'] = os.getenv('TC_TOKEN_EXPIRES')
         return args
 
-    def init_profile(self, profile_name, replace_exit_message=False, replace_outputs=False):
+    def init_profile(
+        self, profile_name, merge_outputs=False, replace_exit_message=False, replace_outputs=False
+    ):
         """Stages and sets up the profile given a profile name"""
         self._profile = Profile(
             default_args=self.default_args,
+            merge_outputs=merge_outputs,
             name=profile_name,
             redis_client=self.redis_client,
             replace_exit_message=replace_exit_message,
             replace_outputs=replace_outputs,
             tcex_testing_context=self.tcex_testing_context,
+            logger=self.log,
         )
 
         # stage ThreatConnect data based on current profile
         self._staged_tc_data = self.stager.threatconnect.entities(
             self._profile.stage_threatconnect, self._profile.owner
         )
-        print('stage_tc_data', self._staged_tc_data)
 
         # insert staged data for replacement
         self._profile.tc_staged_data = self._staged_tc_data
@@ -209,31 +210,6 @@ class TestCase:
         # stage kvstore data based on current profile
         self.stager.redis.from_dict(self._profile.stage_kvstore)
 
-    # @property
-    # def install_json(self):
-    #     """Return install.json contents."""
-    #     file_fqpn = os.path.join(self._app_path, 'install.json')
-    #     if self._install_json is None:
-    #         if os.path.isfile(file_fqpn):
-    #             with open(file_fqpn, 'r') as fh:
-    #                 self._install_json = json.load(fh)
-    #         else:
-    #             print(f'File "{file_fqpn}" could not be found.')
-    #     return self._install_json
-
-    # def input_params(self):
-    #     """Return install.json params in a dict with name param as key.
-
-    #     Returns:
-    #         dict: A dictionary containing the install.json input params with name as key.
-    #     """
-    #     if self._input_params is None:
-    #         self._input_params = {}
-    #         # Currently there is no support for projects with multiple install.json files.
-    #         for p in self.ij.params:
-    #             self._input_params.setdefault(p.get('name'), p)
-    #     return self._input_params
-
     def log_data(self, stage, label, data, level='info'):
         """Log validation data."""
         msg = f"{f'[{stage}]'!s:>20} : {label!s:<15}: {data!s:<50}"
@@ -243,24 +219,6 @@ class TestCase:
     def profile(self):
         """Return profile instance."""
         return self._profile
-
-    # @property
-    # def profile_name(self):
-    #     """Return partially parsed test case data."""
-    #     name_pattern = r'^test_[a-zA-Z0-9_]+\[(.+)\]$'
-    #     try:
-    #         return re.search(name_pattern, self.test_case_data[-1]).group(1)
-    #     except AttributeError:
-    #         return None
-
-    # @property
-    # def profile_names(self):
-    #     """Return all profile names in the profiles.d directory."""
-    #     profile_names = []
-    #     for filename in sorted(os.listdir(self.test_case_profile_dir)):
-    #         if filename.endswith('.json'):
-    #             profile_names.append(filename.replace('.json', ''))
-    #     return profile_names
 
     def run(self, args):
         """Implement in Child Class"""

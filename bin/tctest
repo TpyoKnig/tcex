@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 """TcEx Framework Pytest Profile Generation Module"""
 import argparse
+import os
 import sys
 import traceback
 
 import colorama as c
 from tcex.bin import Test
+from tcex.app_config_object import Profile
 
 # autoreset colorama
 c.init(autoreset=True, strip=False)
@@ -57,6 +59,12 @@ parser.add_argument(
     dest='profile_name',
     help='The profile name to create, delete, update.',
 )
+parser.add_argument(
+    '--update',
+    action='store_true',
+    default=False,
+    help='Update all non-editable template files for all features.',
+)
 args, extra_args = parser.parse_known_args()
 
 
@@ -74,6 +82,32 @@ if __name__ == '__main__':
         elif args.permutations:
             # write permutations file
             tc_test.permutations.write_permutations_file()
+            sys.exit()
+        elif args.update:
+            # TODO: this sections needs an update
+            if os.path.isdir('tests'):
+                for feature in os.listdir('tests'):
+                    feature_path = os.path.join('tests', feature)
+                    # check for feature directory
+                    if not os.path.isdir(feature_path) or not os.path.isdir(
+                        os.path.join(feature_path, 'profiles.d')
+                    ):
+                        # not a feature directory
+                        continue
+                    # now we know this current directory is a feature directory
+                    profile = Profile(default_args={}, feature=feature, name='')
+                    print(f'{c.Fore.GREEN}Update template files for "{feature}" Feature')
+                    tc_test.test_profile_template.profile = profile
+                    tc_test.test_profile_template.render_template()
+                    tc_test.validation_templates.profile = profile
+                    tc_test.validation_templates.render_templates()
+                    tc_test.download_template.profile = profile
+
+                tc_test.download_template.test_conftest_py()
+                tc_test.download_template.test_profiles_py()
+                # print results
+                tc_test.download_template.print_download_results()
+            sys.exit()
         elif args.feature and (args.profile_name or args.profile_file):
             # generates the tests and feature dir
             tc_test.create_dirs()
