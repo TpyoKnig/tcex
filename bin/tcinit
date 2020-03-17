@@ -104,6 +104,13 @@ if __name__ == '__main__':
                 line_color=c.Fore.YELLOW,
             )
             sys.exit(1)
+        elif args.update and args.template is None and tci.tj.template is None:
+            tci.print_message(
+                f'The template could not be determined. Please provide the template arg using '
+                f'--template <template name> to update template files.',
+                line_color=c.Fore.YELLOW,
+            )
+            sys.exit(1)
         elif os.listdir(os.getcwd()) and not os.getenv('TC_DEVELOPER'):
             tci.print_message(
                 f'The current directory does not appear to be empty. Updating files can cause loss '
@@ -117,23 +124,31 @@ if __name__ == '__main__':
             if response not in ['y', 'yes']:
                 sys.exit()
 
-        print(f'{c.Style.BRIGHT}Using files from {c.Fore.CYAN}"{args.branch}"{c.Fore.RESET} branch')
+        # use previous template value from tcex.json if template not passed
+        template = args.template
+        if template is None:
+            template = tci.tj.template
+
+        print(
+            f'{c.Style.BRIGHT}Using files from {c.Fore.CYAN}"{args.branch}"{c.Fore.RESET} branch '
+            f'and {c.Fore.CYAN}"{template}"{c.Fore.RESET} template.'
+        )
 
         # download common files
-        tci.download_template.init_common_files(args.template)
+        tci.download_template.init_common_files(template)
 
         # download type specific files
-        if args.template.startswith('external'):
-            tci.download_template.init_external(args.template)
-        elif args.template.startswith('job'):
+        if template.startswith('external'):
+            tci.download_template.init_external(template)
+        elif template.startswith('job'):
             tci.download_template.init_job()
-        elif args.template.startswith('playbook'):
+        elif template.startswith('playbook'):
             tci.download_template.init_playbook()
-        elif args.template.startswith('service'):
-            tci.download_template.init_service(args.template)
+        elif template.startswith('service'):
+            tci.download_template.init_service(template)
 
         # if we are migrating, update the install.json
-        if (args.update or args.migrate) and not args.template.startswith('external'):
+        if (args.update or args.migrate) and not template.startswith('external'):
             tci.ij.update_schema(migrate=args.migrate)
 
         # print results
@@ -143,7 +158,7 @@ if __name__ == '__main__':
         tci.ij.update_schema()
 
         # update tcex.json
-        tci.tj.update()
+        tci.tj.update(template)
 
         # provide helpful user info
         if not args.update:

@@ -181,9 +181,10 @@ class Profile:
     def context_tracker(self):
         """Return the current context trackers for Service Apps."""
         if not self._context_tracker:
-            self._context_tracker = json.loads(
-                self.redis_client.hget(self.tcex_testing_context, '_context_tracker') or '[]'
-            )
+            if self.tcex_testing_context:
+                self._context_tracker = json.loads(
+                    self.redis_client.hget(self.tcex_testing_context, '_context_tracker') or '[]'
+                )
         return self._context_tracker
 
     @property
@@ -277,7 +278,7 @@ class Profile:
         """
         profile = json.dumps(profile_data)
 
-        for m in re.finditer(r'\${(env|os|vault):(.*?)}', profile):
+        for m in re.finditer(r'\${(env|envs|os|vault):(.*?)}', profile):
             try:
                 full_match = m.group(0)
                 env_type = m.group(1)  # currently env, os, or vault
@@ -464,8 +465,11 @@ class Profile:
             # schema change for threatconnect staged data
             profile_data = self.update_schema_stage_threatconnect_data(profile_data)
 
-            # update all env variables to match latest pattern
-            profile_data = self.update_schema_variable_pattern_env(profile_data)
+            # update all version 1 env variables to match latest pattern
+            profile_data = self.update_schema_variable_pattern_env_v1(profile_data)
+
+            # update all version 2 env variables to match latest pattern
+            profile_data = self.update_schema_variable_pattern_env_v2(profile_data)
 
             # update all tcenv variables to match latest pattern
             profile_data = self.update_schema_variable_pattern_tcenv(profile_data)
@@ -546,7 +550,7 @@ class Profile:
         return profile_data
 
     @staticmethod
-    def update_schema_variable_pattern_env(profile_data):
+    def update_schema_variable_pattern_env_v1(profile_data):
         """Update the profile variable to latest pattern
 
         Args:
@@ -557,7 +561,31 @@ class Profile:
         """
         profile = json.dumps(profile_data)
 
-        for m in re.finditer(r'\${(env|os|vault)\.(.*?)}', profile):
+        for m in re.finditer(r'\"\$(env|envs)\.(\w+)\"', profile):
+            try:
+                full_match = m.group(0)
+                env_type = m.group(1)  # currently env, os, or vault
+                env_key = m.group(2)
+
+                new_variable = f'"${{{env_type}:{env_key}}}"'
+                profile = profile.replace(full_match, new_variable)
+            except IndexError:
+                print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
+        return json.loads(profile)
+
+    @staticmethod
+    def update_schema_variable_pattern_env_v2(profile_data):
+        """Update the profile variable to latest pattern
+
+        Args:
+            profile_data (dict): The profile data dict.
+
+        Returns:
+            dict: The updated dict.
+        """
+        profile = json.dumps(profile_data)
+
+        for m in re.finditer(r'\${(env|envs|os|vault)\.(.*?)}', profile):
             try:
                 full_match = m.group(0)
                 env_type = m.group(1)  # currently env, os, or vault
@@ -632,12 +660,12 @@ class Profile:
     @property
     def inputs_optional(self):
         """Return required inputs dict."""
-        return self.inputs.get('optional')
+        return self.inputs.get('optional', {})
 
     @property
     def inputs_required(self):
         """Return required inputs dict."""
-        return self.inputs.get('required')
+        return self.inputs.get('required', {})
 
     @property
     def message_tc_filename(self):
