@@ -6,14 +6,16 @@ from .playbooks_base import PlaybooksBase
 
 
 class Playbooks(PlaybooksBase):
-    """Playbook methods for accessing key value store."""
+    """Playbook methods for accessing key value store.
+
+    Args:
+        tcex (object): Instance of TcEx.
+        context (str): The KV Store context/session_id.
+        output_variables (list): The requested output variables.
+    """
 
     def __init__(self, tcex, context, output_variables):
-        """Initialize the Class properties.
-
-        Args:
-            tcex (object): Instance of TcEx.
-        """
+        """Initialize the Class properties."""
         super().__init__(tcex, context, output_variables)
 
         # properties

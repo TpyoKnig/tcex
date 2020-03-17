@@ -14,79 +14,56 @@ from ..utils import Utils
 c.init(autoreset=True, strip=False)
 
 
-class CustomTemplates:
-    """Custom method Template Class"""
+class TemplateBase:
+    """Base class for template module.
+
+    Args:
+        branch (str): The git branch of tcex to use for downloads.
+        profile (Profile): An instance of Profile.
+    """
 
     def __init__(self, profile, branch='master'):
         """Initialize class properties."""
         self.url = f'https://raw.githubusercontent.com/ThreatConnect-Inc/tcex/{branch}/app_init'
         self.profile = profile
 
-    @property
-    def feature_template(self):
-        """Return the feature template file for custom methods"""
-        url = f'{self.url}/tests/custom_feature.py.tpl'
-        r = requests.get(url, allow_redirects=True)
-        if not r.ok:
-            raise RuntimeError(f'Could not download template file ({url}).')
-        return r.content
-
-    @property
-    def parent_template(self):
-        """Return the parent template file for custom methods"""
-        url = f'{self.url}/tests/custom.py.tpl'
-        r = requests.get(url, allow_redirects=True)
-        if not r.ok:
-            raise RuntimeError(f'Could not download template file ({url}).')
-        return r.content
-
-    def render_templates(self):
-        """Render the templates and write to disk conditionally."""
-        variables = {'runtime_level': self.profile.ij.runtime_level.lower()}
-
-        parent_file = os.path.join(self.profile.test_directory, 'custom.py')
-        if not os.path.isfile(parent_file):
-            template = Template(self.parent_template)
-            rendered_template = template.render(**variables)
-            with open(parent_file, 'a') as f:
-                f.write(rendered_template)
-
-        feature_file = os.path.join(self.profile.feature_directory, 'custom_feature.py')
-        if not os.path.isfile(feature_file):
-            template = Template(self.feature_template)
-            rendered_template = template.render(**variables)
-            with open(feature_file, 'a') as f:
-                f.write(rendered_template)
-
-
-class DownloadTemplates:
-    """Template Download Module.
-
-    Args:
-        profile (Profile): An instance of Profile.
-    """
-
-    def __init__(self, branch, profile=None):
-        """Initialize Class properties."""
-        self.url = f'https://raw.githubusercontent.com/ThreatConnect-Inc/tcex/{branch}/app_init'
-        self.profile = profile
-
         # properties
         self._download_results = []
-        self.utils = Utils()
+        self._template_render_results = []
 
-    def print_download_results(self):
-        """Print the download results."""
-        if self._download_results:
+    @staticmethod
+    def _short_string(string, length=65, prepend_ellipsis=True):
+        """Return a shortened destination."""
+        ellipsis = ''
+        if prepend_ellipsis and len(string) > length:
+            ellipsis = '...'
+            length -= len(ellipsis)
+        return f'{ellipsis}{string[-length:]}'
+
+    @staticmethod
+    def download_template(url):
+        """Return template file"""
+        r = requests.get(url, allow_redirects=True)
+        if not r.ok:
+            raise RuntimeError(f'Could not download template file ({url}).')
+        return r.content
+
+    def print_results(self, results):
+        """Print the results."""
+        if results:
             # get the max length of url
             destination_length = 0
             destination_max = 50
             url_length = 0
-            for r in self._download_results:
+            for r in results:
                 if len(r.get('destination')) > destination_length:
                     destination_length = min(len(r.get('destination')) + 5, destination_max)
                 if len(r.get('url')) > url_length:
                     url_length = len(r.get('url')) + 5
+
+            # TODO: fix this - overriding url_length temporarily
+            url_length = 120
+            destination_length = 50
 
             # title row
             print(
@@ -94,7 +71,7 @@ class DownloadTemplates:
                 f"{'Destination:'!s:<{destination_length}}"
                 f"{'Status:'!s:<10}"
             )
-            for r in self._download_results:
+            for r in results:
                 destination = self._short_string(
                     r.get('destination'), length=(destination_length - 5)
                 )
@@ -115,14 +92,72 @@ class DownloadTemplates:
                     f'{status_color}{status!s:<10}'
                 )
 
-    @staticmethod
-    def _short_string(string, length=65, prepend_ellipsis=True):
-        """Return a shortened destination."""
-        ellipsis = ''
-        if prepend_ellipsis and len(string) > length:
-            ellipsis = '...'
-            length -= len(ellipsis)
-        return f'{ellipsis}{string[-length:]}'
+    def print_download_results(self):
+        """Print the download results."""
+        self.print_results(self._download_results)
+
+    def print_template_render_results(self):
+        """Print the download results."""
+        self.print_results(self._template_render_results)
+
+    def render(self, template_url, destination, variables, overwrite=False):
+        """Render the provided template"""
+        status = 'Failed'
+        if not os.path.isfile(destination) or overwrite:
+            template_data = self.download_template(template_url)
+            template = Template(template_data)
+            rendered_template = template.render(**variables)
+            with open(destination, 'w') as f:
+                f.write(rendered_template)
+            status = 'Success'
+        else:
+            status = 'Skipped'
+
+        self._template_render_results.append(
+            {'destination': destination, 'status': status, 'url': template_url}
+        )
+
+
+class CustomTemplates(TemplateBase):
+    """Custom method Template Class
+
+    Args:
+        branch (str): The git branch of tcex to use for downloads.
+        profile (Profile): An instance of Profile.
+    """
+
+    def custom_py(self):
+        """Render the custom.py template."""
+        filename = os.path.join(self.profile.test_directory, 'custom.py')
+        variables = {'runtime_level': self.profile.ij.runtime_level.lower()}
+        self.render(f'{self.url}/tests/custom.py.tpl', filename, variables)
+
+    def custom_feature_py(self):
+        """Render the custom.py template."""
+        filename = os.path.join(self.profile.feature_directory, 'custom_feature.py')
+        variables = {'runtime_level': self.profile.ij.runtime_level.lower()}
+        self.render(f'{self.url}/tests/custom_feature.py.tpl', filename, variables)
+
+    def render_templates(self):
+        """Render the templates and write to disk conditionally."""
+        self.custom_py()
+        self.custom_feature_py()
+
+
+class DownloadTemplates(TemplateBase):
+    """Template Download Module.
+
+    Args:
+        branch (str): The git branch of tcex to use for downloads.
+        profile (Profile): An instance of Profile.
+    """
+
+    def __init__(self, profile=None, branch='master'):
+        """Initialize Class properties."""
+        super().__init__(profile, branch)
+
+        # properties
+        self.utils = Utils()
 
     def download_file(self, url, destination, overwrite=False, default_choice='yes'):
         """Download the provided source file to the provided destination.
@@ -318,13 +353,17 @@ class DownloadTemplates:
         self.download_file(url, destination, overwrite=True)
 
 
-class TestProfileTemplates:
-    """TestProfile Template Class"""
+class TestProfileTemplates(TemplateBase):
+    """TestProfile Template Class
 
-    def __init__(self, profile, branch='master'):
-        """Initialize class properties."""
-        self.url = f'https://raw.githubusercontent.com/ThreatConnect-Inc/tcex/{branch}/app_init'
-        self.profile = profile
+    Args:
+        branch (str): The git branch of tcex to use for downloads.
+        profile (Profile): An instance of Profile.
+    """
+
+    def __init__(self, profile=None, branch='master'):
+        """Initialize Class properties."""
+        super().__init__(profile, branch)
 
     @property
     def app_class(self):
@@ -337,30 +376,21 @@ class TestProfileTemplates:
         }
         return app_type_to_class.get(self.profile.ij.runtime_level.lower())
 
-    def render_template(self):
+    def render_templates(self):
         """Render the templates and write to disk conditionally."""
+        self.test_profiles_py()
+
+    def test_profiles_py(self):
+        """Render the test_profiles.py template."""
+        filename = os.path.join(self.profile.feature_directory, 'test_profiles.py')
         variables = {
             'class_name': self.app_class,
             'runtime_level': self.profile.ij.runtime_level.lower(),
         }
-
-        test_profiles_file = os.path.join(self.profile.feature_directory, 'test_profiles.py')
-        template = Template(self.test_profiles_template)
-        rendered_template = template.render(**variables)
-        with open(test_profiles_file, 'w') as f:
-            f.write(rendered_template)
-
-    @property
-    def test_profiles_template(self):
-        """Return template file"""
-        url = f'{self.url}/tests/test_profiles.py.tpl'
-        r = requests.get(url, allow_redirects=True)
-        if not r.ok:
-            raise RuntimeError(f'Could not download template file ({url}).')
-        return r.content
+        self.render(f'{self.url}/tests/test_profiles.py.tpl', filename, variables, True)
 
 
-class ValidationTemplates:
+class ValidationTemplates(TemplateBase):
     """Validation Template Class
 
     Args:
@@ -371,10 +401,11 @@ class ValidationTemplates:
         NotImplementedError: The delete method is not currently implemented.
     """
 
-    def __init__(self, profile, branch='master'):
-        """Initialize class properties."""
-        self.url = f'https://raw.githubusercontent.com/ThreatConnect-Inc/tcex/{branch}/app_init'
-        self.profile = profile
+    def __init__(self, profile=None, branch='master'):
+        """Initialize Class properties."""
+        super().__init__(profile, branch)
+
+        # properties
         self._variable_match = re.compile(fr'^{self._variable_pattern}$')
         self._variable_parse = re.compile(self._variable_pattern)
 
@@ -411,24 +442,6 @@ class ValidationTemplates:
         variable_pattern += r'[A-Za-z0-9_-]+))'  # variable type (custom)
         return variable_pattern
 
-    @property
-    def custom_template(self):
-        """Return template file"""
-        url = f'{self.url}/tests/validate_custom.py.tpl'
-        r = requests.get(url, allow_redirects=True)
-        if not r.ok:
-            raise RuntimeError(f'Could not download template file ({url}).')
-        return r.content
-
-    @property
-    def feature_template(self):
-        """Return template file"""
-        url = f'{self.url}/tests/validate_feature.py.tpl'
-        r = requests.get(url, allow_redirects=True)
-        if not r.ok:
-            raise RuntimeError(f'Could not download template file ({url}).')
-        return r.content
-
     def output_data(self, output_variables):
         """Return formatted output data.
 
@@ -439,41 +452,35 @@ class ValidationTemplates:
             output_data.append({'method': self._method_name(ov), 'variable': ov})
         return sorted(output_data, key=lambda i: i['method'])
 
-    @property
-    def parent_template(self):
-        """Return template file"""
-        url = f'{self.url}/tests/validate.py.tpl'
-        r = requests.get(url, allow_redirects=True)
-        if not r.ok:
-            raise RuntimeError(f'Could not download template file ({url}).')
-        return r.content
-
-    def render_templates(self, overwrite=False):
-        """Render the templates and write to disk conditionally."""
+    def validate_py(self):
+        """Render the validate.py template."""
+        filename = os.path.join(self.profile.test_directory, 'validate.py')
         variables = {
             'feature': self.profile.feature,
             'output_data': self.output_data(self.profile.ij.output_variable_array),
         }
+        self.render(f'{self.url}/tests/validate.py.tpl', filename, variables, True)
 
-        # render the parent "validate.py" template
-        parent_file = os.path.join(self.profile.test_directory, 'validate.py')
-        template = Template(self.parent_template)
-        rendered_template = template.render(**variables)
-        with open(parent_file, 'w') as f:
-            f.write(rendered_template)
+    def validate_custom_py(self):
+        """Render the validate_custom.py template."""
+        filename = os.path.join(self.profile.test_directory, 'validate_custom.py')
+        variables = {
+            'feature': self.profile.feature,
+            'output_data': self.output_data(self.profile.ij.output_variable_array),
+        }
+        self.render(f'{self.url}/tests/validate_custom.py.tpl', filename, variables)
 
-        # render the custom "validate_custom.py" template
-        custom_file = os.path.join(self.profile.test_directory, 'validate_custom.py')
-        if not os.path.isfile(custom_file) or overwrite:
-            template = Template(self.custom_template)
-            rendered_template = template.render(**variables)
-            with open(custom_file, 'w') as f:
-                f.write(rendered_template)
+    def validate_feature_py(self):
+        """Render the validate_custom.py template."""
+        filename = os.path.join(self.profile.feature_directory, 'validate_feature.py')
+        variables = {
+            'feature': self.profile.feature,
+            'output_data': self.output_data(self.profile.ij.output_variable_array),
+        }
+        self.render(f'{self.url}/tests/validate_feature.py.tpl', filename, variables)
 
-        # render the feature "validate_feature.py" template
-        feature_file = os.path.join(self.profile.feature_directory, 'validate_feature.py')
-        if not os.path.isfile(feature_file) or overwrite:
-            template = Template(self.feature_template)
-            rendered_template = template.render(**variables)
-            with open(feature_file, 'w') as f:
-                f.write(rendered_template)
+    def render_templates(self):
+        """Render the templates and write to disk conditionally."""
+        self.validate_py()
+        self.validate_custom_py()
+        self.validate_feature_py()

@@ -2,9 +2,11 @@
 """TcEx Framework TcexJson Object."""
 import json
 import os
+import re
 from collections import OrderedDict
 
 import colorama as c
+import hvac
 
 from .install_json import InstallJson
 
@@ -20,6 +22,11 @@ class TcexJson:
         # properties
         self._contents = None
         self.ij = InstallJson()
+        self.vault_client = hvac.Client(
+            url=os.getenv('VAULT_URL', 'http://localhost:8200'),
+            token=os.getenv('VAULT_TOKEN'),
+            cert=os.getenv('VAULT_CERT'),
+        )
 
     @property
     def contents(self):
@@ -27,23 +34,29 @@ class TcexJson:
         if self._contents is None:
             try:
                 with open(self.filename, 'r') as fh:
-                    self._contents = json.load(fh, object_pairs_hook=OrderedDict)
+                    contents = json.load(fh, object_pairs_hook=OrderedDict)
+
+                    # replace all variables
+                    contents = self.replace_env_variables(contents)
+
+                    # set updated contents
+                    self._contents = contents
             except OSError:
                 self._contents = {}
 
-        # raise error if tcex.json is missing app_name field
-        if self._contents and not self._contents.get('package', {}).get('app_name'):
-            raise RuntimeError(f'The tcex.json file is missing the package.app_name field.')
+            # raise error if tcex.json is missing app_name field
+            if self._contents and not self._contents.get('package', {}).get('app_name'):
+                raise RuntimeError(f'The tcex.json file is missing the package.app_name field.')
 
-        # log warning for old Apps
-        if self._contents.get('package', {}).get('app_version'):
-            print(
-                f'{c.Fore.YELLOW}'
-                f'The tcex.json file defines "app_version" which should only be defined\n'
-                f'in legacy Apps. Removing the value can cause the App to be treated\n'
-                f'as a new App by TcExchange. Please remove "app_version" when appropriate.'
-                f'{c.Fore.RESET}'
-            )
+            # log warning for old Apps
+            if self._contents.get('package', {}).get('app_version'):
+                print(
+                    f'{c.Fore.YELLOW}'
+                    f'The tcex.json file defines "app_version" which should only be defined\n'
+                    f'in legacy Apps. Removing the value can cause the App to be treated\n'
+                    f'as a new App by TcExchange. Please remove "app_version" when appropriate.'
+                    f'{c.Fore.RESET}'
+                )
 
         return self._contents
 
@@ -51,6 +64,31 @@ class TcexJson:
     def filename(self):
         """Return the fqpn for the layout.json file."""
         return os.path.join(self._path, self._filename)
+
+    def replace_env_variables(self, json_data):
+        """Update the profile to the current schema.
+
+        Args:
+            json_data (dict): The profile data dict.
+
+        Returns:
+            dict: The updated dict.
+        """
+        profile = json.dumps(json_data)
+
+        for m in re.finditer(r'\${(env|os|vault):(.*?)}', profile):
+            try:
+                full_match = m.group(0)
+                env_type = m.group(1)  # currently env, os, or vault
+                env_key = m.group(2)
+
+                if env_type in ['env', 'os'] and os.getenv(env_key):
+                    profile = profile.replace(full_match, os.getenv(env_key))
+                elif env_type in ['env', 'vault'] and self.vault_client.read(env_key):
+                    profile = profile.replace(full_match, self.vault_client.read(env_key))
+            except IndexError:
+                print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
+        return json.loads(profile)
 
     def update(self):
         """Update the contents of the tcex.json file."""
@@ -63,13 +101,19 @@ class TcexJson:
             # update package excludes
             json_data = self.update_package_excludes(json_data)
 
+            # update package excludes
+            json_data = self.update_lib_versions(json_data)
+
+            # update variable pattern
+            json_data = self.update_variable_pattern_env(json_data)
+
             # write updated profile
             fh.seek(0)
             fh.write(f'{json.dumps(json_data, indent=2, sort_keys=True)}\n')
             fh.truncate()
 
         # update contents
-        self._contents = json_data
+        self._contents = self.replace_env_variables(json_data)
 
     def update_package_app_name(self, json_data):
         """Update the package app_name in the tcex.json file."""
@@ -107,14 +151,53 @@ class TcexJson:
 
         return json_data
 
+    def update_lib_versions(self, json_data):
+        """Update the lib_versions array in the tcex.json file."""
+        if os.getenv('TCEX_LIB_VERSIONS') and not self.lib_versions:
+            lib_versions = []
+            for version in os.getenv('TCEX_LIB_VERSIONS').split(','):
+                lib_versions.append(
+                    {
+                        'lib_dir': f'lib_${{env:{version}}}',
+                        'python_executable': f'~/.pyenv/versions/${{env:{version}}}/bin/python',
+                    }
+                )
+            json_data['lib_versions'] = lib_versions
+        return json_data
+
+    @staticmethod
+    def update_variable_pattern_env(json_data):
+        """Update the profile variable to latest pattern
+
+        Args:
+            json_data (dict): The profile data dict.
+
+        Returns:
+            dict: The updated dict.
+        """
+        data = json.dumps(json_data)
+
+        # for m in re.finditer(r'\$(env|os|vault)\.(.*?)', data):
+        for m in re.finditer(r'\$(env|os|vault)\.([^(\/|\")]*)', data):
+            try:
+                full_match = m.group(0)
+                env_type = m.group(1)  # currently env, os, or vault
+                env_key = m.group(2)
+
+                new_variable = f'${{{env_type}:{env_key}}}'
+                data = data.replace(full_match, new_variable)
+            except IndexError:
+                print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
+        return json.loads(data)
+
     #
     # properties
     #
 
     @property
-    def lib_version(self):
+    def lib_versions(self):
         """Return property."""
-        return self.contents.get('lib_version', [])
+        return self.contents.get('lib_versions', [])
 
     @property
     def package(self):

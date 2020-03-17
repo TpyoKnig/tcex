@@ -27,6 +27,7 @@ class Validate(object):
                 method(dict(v))
             else:
                 assert False, f'Unknown output variable found in profile: {k}'
+
     % for data in output_data:
     def ${data['method']}(self, data):
         """Assert for ${data['variable']}."""
