@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sys
+from random import randint
 
 import colorama as c
 import hvac
@@ -81,34 +82,82 @@ class Profile:
         with open(self.filename, 'w') as fh:
             fh.write(f'{json.dumps(json_data, indent=2, sort_keys=True)}\n')
 
-    def add(self, profile_data, profile_name=None, sort_keys=True):
+    def add(self, profile_data=None, profile_name=None, sort_keys=True, permutation_id=None):
         """Add a profile."""
+        profile_data = profile_data or {}
         if profile_name is not None:
             # only used for profile migrations
             self.name = profile_name
 
+        # get input perutations when a permutation_id is passed
+        input_permutations = None
+        if permutation_id is not None:
+            try:
+                input_permutations = self.permutations.input_names[permutation_id]
+            except Exception:
+                # catch any error
+                print(f'{c.Fore.RED}Invalid permutation id provided.')
+                sys.exit(1)
+
+        # this should not hit since tctest also check for duplicates
         if os.path.isfile(self.filename):
             print(f'{c.Fore.RED}A profile with the name already exists.')
             sys.exit(1)
 
         profile = {
-            'exit_codes': profile_data.get('exit_codes', [0]),
-            'exit_message': None,
             'outputs': profile_data.get('outputs'),
-            'stage': profile_data.get('stage', {'kvstore': {}, 'threatconnect': {}}),
+            'stage': profile_data.get('stage', {'kvstore': {}}),
         }
-        if self.ij.runtime_level.lower() == 'triggerservice':
-            profile['configs'] = profile_data.get('configs')
-            profile['trigger'] = profile_data.get('trigger')
-        elif self.ij.runtime_level.lower() == 'webhooktriggerservice':
-            profile['configs'] = profile_data.get('configs')
-            profile['webhook_event'] = profile_data.get('webhook_event')
-        else:
-            profile['inputs'] = profile_data.get('inputs')
+        if self.ij.runtime_level.lower() in ['triggerservice', 'webhooktriggerservice']:
+            profile['configs'] = [
+                {
+                    'trigger_id': str(randint(1000, 9999)),
+                    'config': profile.get(
+                        'inputs',
+                        {
+                            'optional': self.ij.params_to_args(
+                                input_permutations=input_permutations,
+                                required=False,
+                                service_config=False,
+                            ),
+                            'required': self.ij.params_to_args(
+                                input_permutations=input_permutations,
+                                required=True,
+                                service_config=False,
+                            ),
+                        },
+                    ),
+                }
+            ]
+        elif self.ij.runtime_level.lower() in ['organization', 'playbook']:
+            profile['exit_codes'] = profile_data.get('exit_codes', [0])
+            profile['exit_message'] = None
+            profile['inputs'] = profile_data.get(
+                'inputs',
+                {
+                    'optional': self.ij.params_to_args(
+                        required=False, input_permutations=input_permutations
+                    ),
+                    'required': self.ij.params_to_args(
+                        required=True, input_permutations=input_permutations
+                    ),
+                },
+            )
 
         if self.ij.runtime_level.lower() == 'organization':
+            profile['stage']['threatconnect'] = {}
             profile['validation_criteria'] = profile_data.get('validation_criteria', {'percent': 5})
             del profile['outputs']
+        elif self.ij.runtime_level.lower() == 'triggerservice':
+            profile['trigger'] = {}
+        elif self.ij.runtime_level.lower() == 'webhooktriggerservice':
+            profile['webhook_event'] = {
+                'body': '',
+                'headers': [],
+                'method': 'GET',
+                'query_params': [],
+                'trigger_id': '',
+            }
 
         with open(self.filename, 'w') as fh:
             json.dump(profile, fh, indent=2, sort_keys=sort_keys)
@@ -151,7 +200,7 @@ class Profile:
                     # replace all staged variable
                     profile_data = self.replace_tc_variables(profile_data)
 
-                    # set update profile data
+                    # set updated profile data
                     self._data = profile_data
             except OSError:
                 print(f'{c.Fore.RED}Could not open profile {self.filename}.')
@@ -235,7 +284,7 @@ class Profile:
                 env_key = m.group(2)
 
                 if env_type in ['env', 'os'] and os.getenv(env_key):
-                    profile = profile.replace(full_match, env_key)
+                    profile = profile.replace(full_match, os.getenv(env_key))
                 elif env_type in ['env', 'vault'] and self.vault_client.read(env_key):
                     profile = profile.replace(full_match, self.vault_client.read(env_key))
             except IndexError:
@@ -331,8 +380,6 @@ class Profile:
             # cleanup redis
             self.clear_context(context)
 
-        # self.log.debug(f'replace_outputs: {self.replace_outputs}')
-        # self.log.debug(f'self.outputs: {self.outputs}')
         # update _data dict with updated profile
         if self.outputs is None or self.replace_outputs:
             with open(self.filename, 'r+') as fh:
@@ -349,9 +396,7 @@ class Profile:
                 for key in list(outputs):
                     if key in self.outputs:
                         # use current value if exists
-                        self.log.error(f'self.outputs {self.outputs}')
                         merged_outputs[key] = self.outputs[key]
-                        self.log.error(f'self.outputs[key] {self.outputs[key]}')
                     else:
                         merged_outputs[key] = outputs[key]
 
@@ -366,7 +411,7 @@ class Profile:
 
         Args:
             outputs (dict): The dict to add outputs.
-            output_variables (list): A valid list of output variables for this profile.
+            output_variables (list): A valid list of output variables for this profile/permutation.
             redis_data (dict): The data from KV store for this profile.
             trigger_id (str): The current trigger_id (service Apps).
         """
@@ -381,7 +426,7 @@ class Profile:
             # validate redis variables
             if data is None:
                 # log error for missing output data
-                self.log.error(f'[{self.name}] Missing redis output for variable {variable}')
+                self.log.warning(f'[{self.name}] Missing redis output for variable {variable}')
             else:
                 data = json.loads(data.decode('utf-8'))
 
@@ -411,16 +456,19 @@ class Profile:
             profile_data = json.load(fh)
 
             # update all env variables to match latest pattern
-            profile_data = self.update_schema_variable_pattern_env(profile_data)
-
-            # update all tcenv variables to match latest pattern
-            profile_data = self.update_schema_variable_pattern_tcenv(profile_data)
+            self.update_schema_permutation_output_variables(profile_data)
 
             # schema change for threatconnect staged data
             profile_data = self.update_schema_stage_redis_name(profile_data)
 
             # schema change for threatconnect staged data
             profile_data = self.update_schema_stage_threatconnect_data(profile_data)
+
+            # update all env variables to match latest pattern
+            profile_data = self.update_schema_variable_pattern_env(profile_data)
+
+            # update all tcenv variables to match latest pattern
+            profile_data = self.update_schema_variable_pattern_tcenv(profile_data)
 
             # write updated profile
             fh.seek(0)
@@ -430,8 +478,8 @@ class Profile:
         return profile_data
 
     @staticmethod
-    def update_schema_variable_pattern_env(profile_data):
-        """Update the profile variable to latest pattern
+    def update_schema_permutation_output_variables(profile_data):
+        """Remove permutation_output_variables field.
 
         Args:
             profile_data (dict): The profile data dict.
@@ -439,43 +487,11 @@ class Profile:
         Returns:
             dict: The updated dict.
         """
-        profile = json.dumps(profile_data)
-
-        for m in re.finditer(r'\${(env|os|vault)\.(.*?)}', profile):
-            try:
-                full_match = m.group(0)
-                env_type = m.group(1)  # currently env, os, or vault
-                env_key = m.group(2)
-
-                new_variable = f'${{{env_type}:{env_key}}}'
-                profile = profile.replace(full_match, new_variable)
-            except IndexError:
-                print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
-        return json.loads(profile)
-
-    def update_schema_variable_pattern_tcenv(self, profile_data):
-        """Update the profile variable to latest pattern
-
-        Args:
-            profile_data (dict): The profile data dict.
-
-        Returns:
-            dict: The updated dict.
-        """
-        profile = json.dumps(profile_data)
-
-        for data in self.tc_staged_data:
-            key = data.get('key')
-            for m in re.finditer(r'\${tcenv\.' + str(key) + r'\.(.*?)}', profile):
-                try:
-                    full_match = m.group(0)
-                    jmespath_expression = m.group(1)
-
-                    new_variable = f'${{tcenv:{key}:{jmespath_expression}}}'
-                    profile = profile.replace(full_match, new_variable)
-                except IndexError:
-                    print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
-        return json.loads(profile)
+        try:
+            del profile_data['permutation_output_variables']
+        except KeyError:
+            pass
+        return profile_data
 
     @staticmethod
     def update_schema_stage_redis_name(profile_data):
@@ -528,6 +544,54 @@ class Profile:
                 counter += 1
 
         return profile_data
+
+    @staticmethod
+    def update_schema_variable_pattern_env(profile_data):
+        """Update the profile variable to latest pattern
+
+        Args:
+            profile_data (dict): The profile data dict.
+
+        Returns:
+            dict: The updated dict.
+        """
+        profile = json.dumps(profile_data)
+
+        for m in re.finditer(r'\${(env|os|vault)\.(.*?)}', profile):
+            try:
+                full_match = m.group(0)
+                env_type = m.group(1)  # currently env, os, or vault
+                env_key = m.group(2)
+
+                new_variable = f'${{{env_type}:{env_key}}}'
+                profile = profile.replace(full_match, new_variable)
+            except IndexError:
+                print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
+        return json.loads(profile)
+
+    def update_schema_variable_pattern_tcenv(self, profile_data):
+        """Update the profile variable to latest pattern
+
+        Args:
+            profile_data (dict): The profile data dict.
+
+        Returns:
+            dict: The updated dict.
+        """
+        profile = json.dumps(profile_data)
+
+        for data in self.tc_staged_data:
+            key = data.get('key')
+            for m in re.finditer(r'\${tcenv\.' + str(key) + r'\.(.*?)}', profile):
+                try:
+                    full_match = m.group(0)
+                    jmespath_expression = m.group(1)
+
+                    new_variable = f'${{tcenv:{key}:{jmespath_expression}}}'
+                    profile = profile.replace(full_match, new_variable)
+                except IndexError:
+                    print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
+        return json.loads(profile)
 
     #
     # Properties
@@ -659,9 +723,7 @@ class ProfileInteractive:
         profile (Profile): The profile object to build interactive inputs.
     """
 
-    def __init__(
-        self, profile,
-    ):
+    def __init__(self, profile):
         """Initialize Class properties."""
         self.profile = profile
         self.input_type_map = {
@@ -681,7 +743,7 @@ class ProfileInteractive:
     def _default(self, data):
         """Return the best option for default."""
         if data.get('type').lower() == 'boolean':
-            default = data.get('default', 'false')
+            default = str(data.get('default', 'false')).lower()
         elif data.get('type').lower() == 'choice':
             default = None
             valid_values = self.profile.ij.expand_valid_values(data.get('validValues', []))
@@ -700,7 +762,7 @@ class ProfileInteractive:
     @staticmethod
     def _split_list(data):
         """Split a list in two "equal" parts."""
-        half = int(len(data) / 2)
+        half = round(len(data) / 2)
         return data[:half], data[half:]
 
     def add_input(self, name, data, value):
@@ -720,7 +782,10 @@ class ProfileInteractive:
         inputs = {}
         for name, data in self.profile.ij.params_dict.items():
             if inputs:
-                if not self.profile.permutations.validate_input_variable(name, inputs):
+                if (
+                    self.profile.lj.has_layout
+                    and not self.profile.permutations.validate_input_variable(name, inputs)
+                ):
                     continue
 
             # present the input
@@ -781,7 +846,7 @@ class ProfileInteractive:
         print(f'\n{c.Fore.CYAN}{label}')
         print('-' * 50)
         left, right = self._split_list(options)
-        for i, _ in enumerate(len(left)):
+        for i, _ in enumerate(left):
             ld = left[i]
             try:
                 rd = right[i]
@@ -811,7 +876,7 @@ class ProfileInteractive:
     def present_key_value_list(self, name, data):
         """Build a question for key value list input."""
         # add input
-        variable = self.profile.ij.create_variable(data.get('name'), data.get('type'))
+        variable = self.profile.ij.create_variable(data.get('name'), 'KeyValueArray')
         self.add_input(name, data, variable)
         self._staging_data['kvstore'].setdefault(variable, [{'key': '', 'value': ''}])
 

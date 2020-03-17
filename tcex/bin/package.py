@@ -62,25 +62,6 @@ class Package(Bin):
             'tests',  # pytest test directory
         ]
 
-    def _write_install_json(self, filename, install_json):
-        """Write install.json file.
-
-        Some projects have bundles App with multiple install.json files.  Typically these files are
-        prefixed with the App name (e.g., MyApp.install.json).
-
-        Args:
-            filename (str): The install.json file name.
-            install_json (dict): The contents of the install.json file.
-        """
-        # TODO: why check if it exists?
-        if os.path.isfile(filename):
-            with open(filename, 'w') as fh:
-                json.dump(install_json, fh, indent=4, sort_keys=True)
-        else:
-            err = f'Could not write file: {filename}.'
-            # update package data
-            self.package_data['errors'].append(err)
-
     def bundle(self, bundle_name):
         """Bundle multiple Job or Playbook Apps into a single zip file.
 

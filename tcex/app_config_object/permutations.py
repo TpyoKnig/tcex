@@ -21,6 +21,7 @@ class Permutations:
 
         # properties
         self._db_conn = None
+        self._input_names = None
         self._input_permutations = None
         self._output_permutations = None
         # self._redis = None
@@ -208,9 +209,18 @@ class Permutations:
             self.db_drop_table(self.input_table)
 
     @property
+    def input_names(self):
+        """Return all input permutation names for current App."""
+        if self._input_names is None and self.lj.has_layout:
+            self._input_names = []
+            for permutation in self.input_permutations:
+                self._input_names.append([p.get('name') for p in permutation])
+        return self._input_names
+
+    @property
     def input_permutations(self):
         """Return all input permutations for current App."""
-        if self._input_permutations is None:
+        if self._input_permutations is None and self.lj.has_layout:
             self.init_permutations()
         return self._input_permutations
 
@@ -332,7 +342,7 @@ class Permutations:
     def write_permutations_file(self):
         """Print all valid permutations."""
         permutations = []
-        for p, index in enumerate(self._input_permutations):
+        for p, index in enumerate(self.input_permutations):
             permutations.append({'index': index, 'args': p})
 
         with open(self.filename, 'w') as fh:

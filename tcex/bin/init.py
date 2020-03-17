@@ -15,4 +15,4 @@ class Init(Bin):
     def __init__(self, _args):
         """Initialize Class properties."""
         super().__init__(_args)
-        self.download_template = DownloadTemplates(self.args.branch)
+        self.download_template = DownloadTemplates(branch=self.args.branch)

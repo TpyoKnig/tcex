@@ -78,7 +78,25 @@ if __name__ == '__main__':
                     f'{c.Fore.RED}Both --feature and --name must be provided for interactive mode.'
                 )
                 sys.exit(1)
+
+            if os.path.isfile(tc_test.profile.filename):
+                print(f'{c.Fore.RED}A profile with the name already exists.')
+                sys.exit(1)
+
+            # generates the tests and feature dir
+            tc_test.create_dirs()
+            # generates the custom.py and custom_feature.py files
+            tc_test.custom_templates.render_templates()
+            # generates the test_profile.py file
+            tc_test.test_profile_template.render_templates()
+            # generates the validation.py, validation_custom.py, and validation_feature.py files
+            tc_test.validation_templates.render_templates()
+            # adds the profile to the json
             tc_test.interactive_profile()
+            # download conftest.py
+            tc_test.download_template.test_conftest_py()
+            # download profiles.py
+            tc_test.download_template.test_profiles_py()
         elif args.permutations:
             # write permutations file
             tc_test.permutations.write_permutations_file()
@@ -97,34 +115,49 @@ if __name__ == '__main__':
                     # now we know this current directory is a feature directory
                     profile = Profile(default_args={}, feature=feature, name='')
                     print(f'{c.Fore.GREEN}Update template files for "{feature}" Feature')
+                    # update test_profiles.py
                     tc_test.test_profile_template.profile = profile
-                    tc_test.test_profile_template.render_template()
-                    tc_test.validation_templates.profile = profile
-                    tc_test.validation_templates.render_templates()
-                    tc_test.download_template.profile = profile
+                    tc_test.test_profile_template.render_templates()
 
+                profile = Profile(default_args={}, feature='', name='')
+                # render validate.py
+                tc_test.validation_templates.profile = profile
+                tc_test.validation_templates.validate_py()
+                # download conftest.py and profiles.py
                 tc_test.download_template.test_conftest_py()
                 tc_test.download_template.test_profiles_py()
-                # print results
-                tc_test.download_template.print_download_results()
-            sys.exit()
-        elif args.feature and (args.profile_name or args.profile_file):
+        elif args.feature and args.profile_file:
+            tc_test.migrate_profile()
+        elif args.feature and args.profile_name:
+            if os.path.isfile(tc_test.profile.filename):
+                print(f'{c.Fore.RED}A profile with the name already exists.')
+                sys.exit(1)
+
             # generates the tests and feature dir
             tc_test.create_dirs()
             # generates the custom.py and custom_feature.py files
             tc_test.custom_templates.render_templates()
             # generates the test_profile.py file
-            tc_test.test_profile_template.render_template()
+            tc_test.test_profile_template.render_templates()
             # generates the validation.py, validation_custom.py, and validation_feature.py files
             tc_test.validation_templates.render_templates()
             # adds the profile to the json
-            tc_test.add_profile()
+            tc_test.profile.add(permutation_id=args.permutation_id)
             # download conftest.py
             tc_test.download_template.test_conftest_py()
             # download profiles.py
             tc_test.download_template.test_profiles_py()
         else:
-            print('Invalid options.')
+            print(f'{c.Fore.RED}Invalid options (try tctest --help).')
+            sys.exit(1)
+
+        # print results
+        print(f'{c.Style.BRIGHT}Download Results:')
+        tc_test.download_template.print_download_results()
+        print(f'{c.Style.BRIGHT}Template Render Results:')
+        tc_test.custom_templates.print_template_render_results()
+        tc_test.test_profile_template.print_template_render_results()
+        tc_test.validation_templates.print_template_render_results()
 
         # exit
         sys.exit()

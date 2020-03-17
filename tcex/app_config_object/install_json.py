@@ -151,8 +151,23 @@ class InstallJson:
         """Return the fqpn for the layout.json file."""
         return os.path.join(self._path, self._filename)
 
-    def filter_params_dict(self, name=None, required=None, service_config=None, _type=None):
-        """Return params as name/data dict."""
+    def filter_params_dict(
+        self, name=None, required=None, service_config=None, _type=None, input_permutations=None
+    ):
+        """Return params as name/data dict.
+
+        Args:
+            name (str, optional): The name of the input to return. Defaults to None.
+            required (bool, optional): If set the inputs will be filtered based on required field.
+            service_config (bool, optional): If set the inputs will be filtered based on
+                serviceConfig field.
+            _type (str, optional): The type of input to return. Defaults to None.
+            input_permutations (list, optional): A list of valid input names for provided
+                permutation.
+
+        Returns:
+            dict: All valid inputs for current filter.
+        """
         params = {}
         for p in self.params:
 
@@ -170,6 +185,10 @@ class InstallJson:
 
             if _type is not None:
                 if p.get('type') is not _type:
+                    continue
+
+            if input_permutations is not None:
+                if p.get('name') not in input_permutations:
                     continue
 
             params.setdefault(p.get('name'), p)
@@ -200,10 +219,27 @@ class InstallJson:
             params.setdefault(p.get('name'), p)
         return params
 
-    def params_to_args(self, name=None, required=None, service_config=None, _type=None):
-        """Return params as cli args."""
+    def params_to_args(
+        self, name=None, required=None, service_config=None, _type=None, input_permutations=None
+    ):
+        """Return params as cli args.
+
+        Args:
+            name (str, optional): The name of the input to return. Defaults to None.
+            required (bool, optional): If set the inputs will be filtered based on required field.
+            service_config (bool, optional): If set the inputs will be filtered based on
+                serviceConfig field.
+            _type (str, optional): The type of input to return. Defaults to None.
+            input_permutations (list, optional): A list of valid input names for provided
+                permutation.
+
+        Returns:
+            dict: All valid inputs for current filter.
+        """
         args = {}
-        for n, p in self.filter_params_dict(name, required, service_config, _type).items():
+        for n, p in self.filter_params_dict(
+            name, required, service_config, _type, input_permutations
+        ).items():
             if p.get('type').lower() == 'boolean':
                 args[n] = self._to_bool(p.get('default', False))
             elif p.get('type').lower() == 'choice':
@@ -212,7 +248,7 @@ class InstallJson:
             elif p.get('type').lower() == 'multichoice':
                 args[n] = p.get('validValues', [])
             elif p.get('type').lower() == 'keyvaluelist':
-                args[n] = '<KeyValueList>'
+                args[n] = '<KeyValueArray>'
             elif n in ['api_access_id', 'api_secret_key']:
                 # leave these parameters set to the value defined in defaults
                 pass
