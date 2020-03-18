@@ -14,6 +14,9 @@ class Custom(object):
         % if runtime_level in ['triggerservice', 'webhooktriggerservice']:
         test_feature.args = {}
 
+        # set the App run method (multiprocess, subprocess (default), thread)
+        # test_feature.service_run_method = 'subprocess'
+
         # uncomment and modify to control sleep times
         # test_feature.sleep_after_publish_config = 0.5
         # test_feature.sleep_after_publish_webhook_event = 0.5

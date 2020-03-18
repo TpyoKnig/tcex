@@ -115,6 +115,12 @@ def pytest_unconfigure(config):  # pylint: disable=unused-argument
             except OSError:
                 continue
 
+    # remove service started file
+    try:
+        os.remove('./SERVICE_STARTED')
+    except OSError:
+        pass
+
 
 clear_log_directory()
 update_system_path()

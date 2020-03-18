@@ -333,7 +333,6 @@ class DownloadTemplates(TemplateBase):
         self.download_file(
             f'{self.url}/service/service_app.py', destination='service_app.py', overwrite=True
         )
-        self.download_file(f'{self.url}/service/run.py', destination='run.py', overwrite=True)
         self.download_file(f'{self.url}/{template}/run.py', destination='run.py', overwrite=True)
 
     def test_conftest_py(self):

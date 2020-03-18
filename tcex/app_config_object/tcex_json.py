@@ -125,11 +125,19 @@ class TcexJson:
     def update_package_app_name(self, json_data):
         """Update the package app_name in the tcex.json file."""
         if self.package_app_name in [None, '', 'TC_-_', 'TCPB_-_', 'TCVC_-_', 'TCVW_-_']:
-            # do a little cleanup on app_name
-            app_name = os.path.basename(os.getcwd()).replace(' ', '_').replace('-', '_')
+            # lower case name and replace prefix if already exists
+            app_name = os.path.basename(os.getcwd()).lower().replace(self.ij.app_prefix.lower(), '')
+
+            # replace spaces and dashes with underscores
+            app_name = app_name.replace(' ', '_').replace('-', '_').lower()
+
+            # title case app name
             app_name = '_'.join([a.title() for a in app_name.split('_')])
-            if not app_name.startswith(self.ij.app_prefix):
-                app_name = f'{self.ij.app_prefix}{app_name}'
+
+            # prepend appropriate App prefix (e.g., TCPB_-_)
+            app_name = f'{self.ij.app_prefix}{app_name}'
+
+            # update App name
             json_data['package']['app_name'] = app_name
         return json_data
 

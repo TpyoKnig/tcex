@@ -223,17 +223,17 @@ class Profile:
         return os.path.join(self._app_path, 'tests', self.feature, 'profiles.d')
 
     @property
-    def feature_directory(self):
-        """Return fully qualified feature directory."""
-        return os.path.join(self._app_path, 'tests', self.feature)
-
-    @property
     def feature(self):
         """Return the current feature."""
         if self._feature is None:
             # when called in testing framework get the feature from pytest env var.
             self._feature = self._test_case_data[0].split('/')[1].replace('/', '-')
         return self._feature
+
+    @property
+    def feature_directory(self):
+        """Return fully qualified feature directory."""
+        return os.path.join(self._app_path, 'tests', self.feature)
 
     @property
     def filename(self):

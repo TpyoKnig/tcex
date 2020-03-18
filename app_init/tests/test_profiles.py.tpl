@@ -83,11 +83,11 @@ class TestProfiles(${class_name}):
             self.publish_delete_config(config)
 
         # fail if there are no executions to validate
-        if not self.context_tracker and self.profile.outputs:
+        if not self.profile.context_tracker and self.profile.outputs:
             assert False, 'No context found in context_tracker, did event fire?'
 
         # run output variable validation
-        for context in self.context_tracker:
+        for context in self.profile.context_tracker:
             # for service Apps the context on playbooks needs to be set manually
             self.validator.tcex.playbook.key_value_store.context = context
             # the trigger id is stored via the monkey patched session_id method

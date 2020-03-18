@@ -33,15 +33,6 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
     sleep_before_delete_config = 2
     sleep_before_shutdown = 0.5
 
-    # @property
-    # def context_tracker(self):
-    #     """Return the current context trackers."""
-    #     if not self._context_tracker:
-    #         self._context_tracker = json.loads(
-    #             self.redis_client.hget(self.tcex_testing_context, '_context_tracker') or '[]'
-    #         )
-    #     return self._context_tracker
-
     @property
     def default_args(self):
         """Return App default args."""
@@ -71,21 +62,14 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
             )
         return self._mqtt_client
 
-    # @property
-    # def output_variables(self):
-    #     """Return playbook output variables"""
-    #     if self._output_variables is None:
-    #         self._output_variables = []
-    #         # Currently there is no support for projects with multiple install.json files.
-    #         for p in self.install_json.get('playbook', {}).get('outputVariables') or []:
-    #             # "#Trigger:9876:app.data.count!String"
-    #             self._output_variables.append(f"#Trigger:{9876}:{p.get('name')}!{p.get('type')}")
-    #     return self._output_variables
-
     def publish(self, message, topic=None):
-        """Publish message on server channel."""
-        if topic is None:
-            topic = self.server_topic
+        """Publish message on server channel.
+
+        Args:
+            message (str): The message to send.
+            topic (str, optional): The message broker topic. Defaults to None.
+        """
+        topic = topic or self.server_topic
 
         # self.log.debug(f'topic: ({topic})')
         # self.log.debug(f'message: ({message})')
@@ -103,6 +87,12 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
             trigger_id (str): The trigger id for the config message.
             message (dict): The entire message with trigger_id and config.
         """
+        # merge the message config (e.g., optional, required)
+        message_config = message.pop('config')
+        config = message_config.get('optional')
+        config.update(message_config.get('required'))
+        message['config'] = config
+
         # build config message
         message['apiToken'] = '000000000'
         message['expireSeconds'] = int(time.time() + 86400)
@@ -169,36 +159,6 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
     def run(self, args):
         """Implement in Child Class"""
         raise NotImplementedError('Child class must implement this method.')
-
-    # def run_profile(self, profile_name):
-    #     """Run an App using the profile name.
-
-    #     Args:
-    #         profile_name (str): The name of the profile to run.
-
-    #     Returns:
-    #         int: The exit code for the App execution.
-    #     """
-    #     profile = self.profile(profile_name)
-    #     if not profile:
-    #         self.log.error(f'No profile named {profile_name} found.')
-    #         return self._exit(1)
-
-    #     # stage any staging data
-    #     self.stager.redis.from_dict(profile.get('stage', {}).get('redis', {}))
-
-    #     # build args from install.json
-    #     args = {}
-    #     args.update(profile.get('inputs', {}).get('required', {}))
-    #     args.update(profile.get('inputs', {}).get('optional', {}))
-    #     if not args:
-    #         self.log.error(f'No profile named {profile_name} found.')
-    #         return self._exit(1)
-
-    #     # run the App
-    #     self.run(args)
-
-    #     return self._exit(0)
 
     def run_service(self):
         """Run the micro-service."""

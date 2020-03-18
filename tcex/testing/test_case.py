@@ -69,10 +69,12 @@ class TestCase:
 
     def _update_path_args(self, args):
         """Update path in args for each test profile."""
-        args['tc_in_path'] = self.profile.tc_in_path
-        args['tc_log_path'] = self.profile.tc_log_path
-        args['tc_out_path'] = self.profile.tc_out_path
-        args['tc_temp_path'] = self.profile.tc_temp_path
+        # service Apps do not have a profile when this is needed.
+        profile = self.profile or Profile(default_args=self.default_args)
+        args['tc_in_path'] = profile.tc_in_path
+        args['tc_log_path'] = profile.tc_log_path
+        args['tc_out_path'] = profile.tc_out_path
+        args['tc_temp_path'] = profile.tc_temp_path
 
     def app_init(self, args):
         """Return an instance of App."""
