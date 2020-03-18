@@ -127,7 +127,21 @@ if __name__ == '__main__':
                 tc_test.download_template.test_conftest_py()
                 tc_test.download_template.test_profiles_py()
         elif args.feature and args.profile_file:
+
+            # generates the tests and feature dir
+            tc_test.create_dirs()
+            # generates the custom.py and custom_feature.py files
+            tc_test.custom_templates.render_templates()
+            # generates the test_profile.py file
+            tc_test.test_profile_template.render_templates()
+            # generates the validation.py, validation_custom.py, and validation_feature.py files
+            tc_test.validation_templates.render_templates()
+            # migrate the profile to the json
             tc_test.migrate_profile()
+            # download conftest.py
+            tc_test.download_template.test_conftest_py()
+            # download profiles.py
+            tc_test.download_template.test_profiles_py()
         elif args.feature and args.profile_name:
             if os.path.isfile(tc_test.profile.filename):
                 print(f'{c.Fore.RED}A profile with the name already exists.')

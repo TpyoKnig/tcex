@@ -181,9 +181,10 @@ class Profile:
     def context_tracker(self):
         """Return the current context trackers for Service Apps."""
         if not self._context_tracker:
-            self._context_tracker = json.loads(
-                self.redis_client.hget(self.tcex_testing_context, '_context_tracker') or '[]'
-            )
+            if self.tcex_testing_context:
+                self._context_tracker = json.loads(
+                    self.redis_client.hget(self.tcex_testing_context, '_context_tracker') or '[]'
+                )
         return self._context_tracker
 
     @property
@@ -277,7 +278,7 @@ class Profile:
         """
         profile = json.dumps(profile_data)
 
-        for m in re.finditer(r'\${(env|os|vault):(.*?)}', profile):
+        for m in re.finditer(r'\${(env|envs|os|vault):(.*?)}', profile):
             try:
                 full_match = m.group(0)
                 env_type = m.group(1)  # currently env, os, or vault
@@ -464,8 +465,11 @@ class Profile:
             # schema change for threatconnect staged data
             profile_data = self.update_schema_stage_threatconnect_data(profile_data)
 
-            # update all env variables to match latest pattern
-            profile_data = self.update_schema_variable_pattern_env(profile_data)
+            # update all version 1 env variables to match latest pattern
+            profile_data = self.update_schema_variable_pattern_env_v1(profile_data)
+
+            # update all version 2 env variables to match latest pattern
+            profile_data = self.update_schema_variable_pattern_env_v2(profile_data)
 
             # update all tcenv variables to match latest pattern
             profile_data = self.update_schema_variable_pattern_tcenv(profile_data)
@@ -546,7 +550,7 @@ class Profile:
         return profile_data
 
     @staticmethod
-    def update_schema_variable_pattern_env(profile_data):
+    def update_schema_variable_pattern_env_v1(profile_data):
         """Update the profile variable to latest pattern
 
         Args:
@@ -557,7 +561,31 @@ class Profile:
         """
         profile = json.dumps(profile_data)
 
-        for m in re.finditer(r'\${(env|os|vault)\.(.*?)}', profile):
+        for m in re.finditer(r'\"\$(env|envs)\.(\w+)\"', profile):
+            try:
+                full_match = m.group(0)
+                env_type = m.group(1)  # currently env, os, or vault
+                env_key = m.group(2)
+
+                new_variable = f'"${{{env_type}:{env_key}}}"'
+                profile = profile.replace(full_match, new_variable)
+            except IndexError:
+                print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
+        return json.loads(profile)
+
+    @staticmethod
+    def update_schema_variable_pattern_env_v2(profile_data):
+        """Update the profile variable to latest pattern
+
+        Args:
+            profile_data (dict): The profile data dict.
+
+        Returns:
+            dict: The updated dict.
+        """
+        profile = json.dumps(profile_data)
+
+        for m in re.finditer(r'\${(env|envs|os|vault)\.(.*?)}', profile):
             try:
                 full_match = m.group(0)
                 env_type = m.group(1)  # currently env, os, or vault
@@ -632,12 +660,12 @@ class Profile:
     @property
     def inputs_optional(self):
         """Return required inputs dict."""
-        return self.inputs.get('optional')
+        return self.inputs.get('optional', {})
 
     @property
     def inputs_required(self):
         """Return required inputs dict."""
-        return self.inputs.get('required')
+        return self.inputs.get('required', {})
 
     @property
     def message_tc_filename(self):
@@ -745,12 +773,12 @@ class ProfileInteractive:
         if data.get('type').lower() == 'boolean':
             default = str(data.get('default', 'false')).lower()
         elif data.get('type').lower() == 'choice':
-            default = None
+            default = 0
             valid_values = self.profile.ij.expand_valid_values(data.get('validValues', []))
             if data.get('name') == 'tc_action':
                 for vv in valid_values:
                     if self.profile.feature.lower() == vv.lower():
-                        default = vv
+                        default = valid_values.index(vv)
             else:
                 default = data.get('default')
         elif data.get('type').lower() == 'multichoice':
@@ -772,6 +800,11 @@ class ProfileInteractive:
         else:
             self._inputs['optional'].setdefault(name, value)
 
+    @staticmethod
+    def choice(option_text):
+        """Return the input choice string."""
+        return f'{c.Fore.MAGENTA}Choice{c.Fore.RESET}{c.Style.BRIGHT}{option_text}: '
+
     @property
     def inputs(self):
         """Return inputs dict."""
@@ -782,9 +815,11 @@ class ProfileInteractive:
         inputs = {}
         for name, data in self.profile.ij.params_dict.items():
             if inputs:
+                # each input will be checked for permutations if the App has layout and not hidden
                 if (
                     self.profile.lj.has_layout
                     and not self.profile.permutations.validate_input_variable(name, inputs)
+                    and not data.get('hidden')
                 ):
                     continue
 
@@ -797,7 +832,6 @@ class ProfileInteractive:
     def present_boolean(self, name, data):
         """Build a question for boolean input."""
         default = self._default(data)
-        label = data.get('label')
         valid_values = ['true', 'false']
 
         option_default = 'false'
@@ -810,16 +844,14 @@ class ProfileInteractive:
             options.append(v)
         option_text = f" {'/'.join(options)}"
 
-        print(f'\n{c.Fore.CYAN}{label}')
-        print('-' * 50)
-        message = f'{c.Fore.MAGENTA}Choice{option_text}: '
-        value = input(message)
+        self.print_header(data)
+        value = input(self.choice(option_text)).strip()
         if not value:
             value = option_default
         value = self.utils.to_bool(value)
 
         # user feedback
-        print(f'{c.Fore.CYAN}- Using value "{value}"\n')
+        self.print_feedback(value)
 
         # add input
         self.add_input(name, data, value)
@@ -829,22 +861,16 @@ class ProfileInteractive:
     def present_choice(self, name, data):
         """Build a question for choice input."""
         default = self._default(data)
-        label = data.get('label')
+        option_text = f' [{default}]'
         valid_values = self.profile.ij.expand_valid_values(data.get('validValues', []))
 
-        # get default value, default text, and options
-        option_default = 0
-        option_text = ''
+        # enumerate options
         options = []
         for i, v in enumerate(valid_values):
-            if v == default:
-                option_default = i
-                option_text = f' [{i}]'
             options.append(f'{i}. {v}')
 
-        # show the input
-        print(f'\n{c.Fore.CYAN}{label}')
-        print('-' * 50)
+        # display the options
+        self.print_header(data)
         left, right = self._split_list(options)
         for i, _ in enumerate(left):
             ld = left[i]
@@ -853,10 +879,10 @@ class ProfileInteractive:
             except IndexError:
                 rd = ''
             print(f'{ld:40} {rd:40}')
-        message = f'{c.Fore.MAGENTA}Choice{option_text}: '
-        value = input(message).strip()
+
+        value = input(self.choice(option_text)).strip()
         if not value:
-            value = option_default
+            value = default
 
         # get value from valid value index
         try:
@@ -866,7 +892,7 @@ class ProfileInteractive:
             sys.exit(1)
 
         # user feedback
-        print(f'{c.Fore.CYAN}- Using value "{value}"\n')
+        self.print_feedback(value)
 
         # add input
         self.add_input(name, data, value)
@@ -885,7 +911,6 @@ class ProfileInteractive:
     def present_multichoice(self, name, data):
         """Build a question for choice input."""
         default = self._default(data)
-        label = data.get('label')
         valid_values = self.profile.ij.expand_valid_values(data.get('validValues', []))
 
         option_default = []
@@ -897,10 +922,8 @@ class ProfileInteractive:
                 option_text += f' [{v}]'
             options.append(f'{i:02}. {v}\n')
 
-        print(f'\n{c.Fore.CYAN}{label}')
-        print('-' * 50)
-        message = f'{c.Fore.MAGENTA}Choice{option_text}: '
-        value = input(message)
+        self.print_header(data)
+        value = input(self.choice(option_text)).strip()
         if not value and option_default:
             value = option_default
         else:
@@ -918,7 +941,7 @@ class ProfileInteractive:
         delimited_values = '|'.join(values)
 
         # user feedback
-        print(f'{c.Fore.CYAN}- Using value "{value}"\n')
+        self.print_feedback(value)
 
         # add input
         self.add_input(name, data, delimited_values)
@@ -928,17 +951,14 @@ class ProfileInteractive:
     def present_string(self, name, data):
         """Build a question for boolean input."""
         default = self._default(data)
-        label = data.get('label')
 
         option_text = ''
         if default is not None:
             option_default = default
             option_text = f' [{default}]'
 
-        print(f'\n{c.Fore.CYAN}{label}')
-        print('-' * 50)
-        message = f'{c.Fore.MAGENTA}Choice{option_text}: '
-        value = input(message)
+        self.print_header(data)
+        value = input(self.choice(option_text)).strip()
         if not value:
             value = option_default
 
@@ -952,12 +972,44 @@ class ProfileInteractive:
             input_value = variable
 
         # user feedback
-        print(f'{c.Fore.CYAN}- Using value {feedback_value}\n')
+        self.print_feedback(feedback_value)
 
         # add input
         self.add_input(name, data, input_value)
 
         return value
+
+    @staticmethod
+    def print_feedback(feedback_value):
+        """Print the value used."""
+        print(f'Using value: {c.Fore.GREEN}{feedback_value}\n')
+
+    @staticmethod
+    def print_header(data):
+        """Enrich the header with metatdata."""
+
+        def _print_metadata(title, value):
+            """Print the title and value"""
+            print(f'{c.Fore.CYAN}{title!s:<22}: {c.Fore.RESET}{c.Style.BRIGHT}{value}')
+
+        label = data.get('label', 'NO LABEL')
+        print(f'\n{c.Fore.GREEN}{label}')
+
+        note = data.get('note', '')[:100]
+        _print_metadata('Note', note)
+
+        if data.get('hidden'):
+            _print_metadata('Hidden', 'true')
+
+        pbt = ','.join(data.get('playbookDataType', []))
+        if pbt:
+            _print_metadata('Playbook Data Types', pbt)
+
+        vv = ','.join(data.get('validValues', []))
+        if vv:
+            _print_metadata('Valid Values', vv)
+
+        print('-' * 50)
 
     @property
     def staging_data(self):

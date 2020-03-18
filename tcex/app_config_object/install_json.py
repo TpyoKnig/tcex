@@ -435,7 +435,7 @@ class InstallJson:
 
     @property
     def output_variables(self):
-        """Return output variables as name/data dict."""
+        """Return output variables dict."""
         return self.playbook.get('outputVariables', [])
 
     @property

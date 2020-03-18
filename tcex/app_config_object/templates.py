@@ -240,7 +240,7 @@ class DownloadTemplates(TemplateBase):
             options.append(o)
         return f"{'/'.join(options)}"
 
-    def init_common_files(self, template):
+    def init_common_files(self, template=None):
         """Download common files."""
         self.download_file(
             f'{self.url}/.pre-commit-config.yaml',
@@ -281,7 +281,7 @@ class DownloadTemplates(TemplateBase):
             overwrite='prompt',
             default_choice='no',
         )
-        if not template.startswith('external'):
+        if template and not template.startswith('external'):
             self.download_file(f'{self.url}/app_lib.py', destination='app_lib.py', overwrite=True)
             self.download_file(
                 f'{self.url}/{template}/args.py',

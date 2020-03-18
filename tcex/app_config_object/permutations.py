@@ -167,7 +167,10 @@ class Permutations:
             column (str): The column name in which the value is to be updated.
             value (str): The value to update in the column.
         """
-        sql = f'UPDATE {table_name} SET {column} = \'{value}\''
+        # escape any single quotes in value
+        if isinstance(value, str):
+            value = value.replace('\'', '\\')
+        sql = f'UPDATE {table_name} SET {column} = "{value}"'
         cur = self.db_conn.cursor()
         cur.execute(sql)
 

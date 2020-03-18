@@ -33,6 +33,35 @@ class LayoutJson:
                 self._contents = json.load(fh, object_pairs_hook=OrderedDict)
         return self._contents
 
+    def create(self, inputs, outputs):
+        """Create new layout.json file based on inputs and outputs."""
+
+        lj = {
+            'inputs': [
+                {'parameters': [], 'sequence': 1, 'title': 'Action'},
+                {'parameters': [], 'sequence': 2, 'title': 'Connection'},
+                {'parameters': [], 'sequence': 3, 'title': 'Configure'},
+                {'parameters': [], 'sequence': 4, 'title': 'Advanced'},
+            ],
+            'outputs': [],
+        }
+
+        for i in inputs:
+            if i.get('name') == 'tc_action':
+                lj['inputs'][0]['parameters'].append({'name': 'tc_action'})
+            elif i.get('hidden') is True:
+                lj['inputs'][2]['parameters'].append(
+                    {'display': "'hidden' != 'hidden'", 'hidden': 'true', 'name': i.get('name')}
+                )
+            else:
+                lj['inputs'][2]['parameters'].append({'display': '', 'name': i.get('name')})
+
+        for o in outputs:
+            lj['outputs'].append({'display': '', 'name': o.get('name')})
+
+        with open(self.filename, 'w') as fh:
+            fh.write(f'{json.dumps(lj, indent=2, sort_keys=False)}\n')
+
     @property
     def filename(self):
         """Return the fqpn for the layout.json file."""

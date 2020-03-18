@@ -90,13 +90,16 @@ class TcexJson:
                 print(f'{c.Fore.YELLOW}Invalid variable found {full_match}.')
         return json.loads(profile)
 
-    def update(self):
+    def update(self, template=None):
         """Update the contents of the tcex.json file."""
         with open(self.filename, 'r+') as fh:
             json_data = json.load(fh)
 
             # update app_name
             json_data = self.update_package_app_name(json_data)
+
+            # update deprecated fields
+            json_data = self.update_deprecated_fields(json_data)
 
             # update package excludes
             json_data = self.update_package_excludes(json_data)
@@ -106,6 +109,10 @@ class TcexJson:
 
             # update variable pattern
             json_data = self.update_variable_pattern_env(json_data)
+
+            # update template
+            if template is not None:
+                json_data['template'] = template
 
             # write updated profile
             fh.seek(0)
@@ -124,6 +131,15 @@ class TcexJson:
             if not app_name.startswith(self.ij.app_prefix):
                 app_name = f'{self.ij.app_prefix}{app_name}'
             json_data['package']['app_name'] = app_name
+        return json_data
+
+    @staticmethod
+    def update_deprecated_fields(json_data):
+        """Update deprecated fields in the tcex.json file."""
+        deprecated_fields = ['profile_include_dirs']
+        for d in deprecated_fields:
+            if json_data.get(d) is not None:
+                del json_data[d]
         return json_data
 
     def update_package_excludes(self, json_data):
@@ -233,3 +249,8 @@ class TcexJson:
     def package_excludes(self):
         """Return property."""
         return self.package.get('excludes', [])
+
+    @property
+    def template(self):
+        """Return property."""
+        return self.contents.get('template')
