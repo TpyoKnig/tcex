@@ -121,7 +121,7 @@ class InstallJson:
         Returns:
             list: An expanded list of valid values for Choice or MultiChoice inputs.
         """
-
+        valid_values = list(valid_values)
         if '${GROUP_TYPES}' in valid_values:
             valid_values.remove('${GROUP_TYPES}')
             valid_values.extend(
