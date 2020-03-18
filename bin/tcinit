@@ -46,6 +46,9 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument('--branch', default='master', help='Git branch.')
 parser.add_argument(
+    '--layout', action='store_true', help='Create a layout.json file.', default=False,
+)
+parser.add_argument(
     '--migrate',
     action='store_true',
     help='Enable this flag to migrate an existing App.',
@@ -168,6 +171,10 @@ if __name__ == '__main__':
                 line_bright=True,
                 line_color=c.Fore.GREEN,
             )
+
+        # create layout.json file if requested
+        if args.layout:
+            tci.lj.create(tci.ij.params, tci.ij.output_variables)
 
         # cleanly exit
         sys.exit()
