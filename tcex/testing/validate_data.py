@@ -712,7 +712,7 @@ class ThreatConnect:
         """Initialize class properties"""
         self.provider = provider
 
-    def batch(self, profile):  # context, owner, validation_criteria):
+    def batch(self, profile):
         """Validate the batch submission"""
 
         validation_percent = profile.validation_criteria.get('percent', 100)
