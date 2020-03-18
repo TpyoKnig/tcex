@@ -684,6 +684,11 @@ class Profile:
         )
 
     @property
+    def validation_criteria(self):
+        """Return the validation_criteria value."""
+        return self.data.get('validation_criteria', {})
+
+    @property
     def outputs(self):
         """Return outputs dict."""
         return self.data.get('outputs')
