@@ -6,6 +6,7 @@ import os
 import re
 import sys
 from random import randint
+import math
 
 import colorama as c
 import hvac
@@ -785,7 +786,10 @@ class ProfileInteractive:
                     if self.profile.feature.lower() == vv.lower():
                         default = valid_values.index(vv)
             else:
-                default = data.get('default')
+                try:
+                    default = valid_values.index(data.get('default'))
+                except ValueError:
+                    default = 0
             if not default and valid_values:
                 default = valid_values[0]
         elif data.get('type').lower() == 'multichoice':
@@ -797,7 +801,7 @@ class ProfileInteractive:
     @staticmethod
     def _split_list(data):
         """Split a list in two "equal" parts."""
-        half = round(len(data) / 2)
+        half = math.ceil(len(data) / 2)
         return data[:half], data[half:]
 
     def add_input(self, name, data, value):
@@ -895,13 +899,19 @@ class ProfileInteractive:
 
         # get value from valid value index
         if valid_values:
+            index = None
             try:
-                value = valid_values[int(value)]
+                index = valid_values.index(value)
+            except ValueError:
+                pass
+            try:
+                index = index or value
+                value = valid_values[int(index)]
             except (TypeError, ValueError):
                 print(
                     (
                         f'{c.Fore.RED}Invalid value of {value} provided. '
-                        f'Please provide a integer between 0-{len(valid_values)}'
+                        f'Please provide a integer between 0-{len(valid_values) - 1}'
                     )
                 )
                 sys.exit(1)
