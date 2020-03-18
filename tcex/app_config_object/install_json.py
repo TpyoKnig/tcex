@@ -140,10 +140,8 @@ class InstallJson:
             )
         elif '${OWNERS}' in valid_values:
             valid_values.remove('${OWNERS}')
-            valid_values.append('')
         elif '${USERS}' in valid_values:
             valid_values.remove('${USERS}')
-            valid_values.append('')
         return valid_values
 
     @property

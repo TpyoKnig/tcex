@@ -781,6 +781,8 @@ class ProfileInteractive:
                         default = valid_values.index(vv)
             else:
                 default = data.get('default')
+            if not default and valid_values:
+                default = valid_values[0]
         elif data.get('type').lower() == 'multichoice':
             default = data.get('default').split('|')
         else:
@@ -863,7 +865,8 @@ class ProfileInteractive:
         default = self._default(data)
         option_text = f' [{default}]'
         valid_values = self.profile.ij.expand_valid_values(data.get('validValues', []))
-
+        if not valid_values:
+            option_text = ''
         # enumerate options
         options = []
         for i, v in enumerate(valid_values):
@@ -881,15 +884,22 @@ class ProfileInteractive:
             print(f'{ld:40} {rd:40}')
 
         value = input(self.choice(option_text)).strip()
+
         if not value:
             value = default
 
         # get value from valid value index
-        try:
-            value = valid_values[int(value)]
-        except TypeError:
-            print(f'{c.Fore.RED}Invalid value of {value} provided.')
-            sys.exit(1)
+        if valid_values:
+            try:
+                value = valid_values[int(value)]
+            except (TypeError, ValueError):
+                print(
+                    (
+                        f'{c.Fore.RED}Invalid value of {value} provided. '
+                        f'Please provide a integer between 0-{len(valid_values)}'
+                    )
+                )
+                sys.exit(1)
 
         # user feedback
         self.print_feedback(value)
