@@ -152,12 +152,19 @@ class InstallJson:
         return os.path.join(self._path, self._filename)
 
     def filter_params_dict(
-        self, name=None, required=None, service_config=None, _type=None, input_permutations=None
+        self,
+        name=None,
+        hidden=None,
+        required=None,
+        service_config=None,
+        _type=None,
+        input_permutations=None,
     ):
         """Return params as name/data dict.
 
         Args:
             name (str, optional): The name of the input to return. Defaults to None.
+            hidden (bool, optional): If set the inputs will be filtered based on hidden field.
             required (bool, optional): If set the inputs will be filtered based on required field.
             service_config (bool, optional): If set the inputs will be filtered based on
                 serviceConfig field.
@@ -173,6 +180,10 @@ class InstallJson:
 
             if name is not None:
                 if p.get('name') != name:
+                    continue
+
+            if hidden is not None:
+                if p.get('hidden', False) is not hidden:
                     continue
 
             if required is not None:
@@ -220,7 +231,13 @@ class InstallJson:
         return params
 
     def params_to_args(
-        self, name=None, required=None, service_config=None, _type=None, input_permutations=None
+        self,
+        name=None,
+        hidden=None,
+        required=None,
+        service_config=None,
+        _type=None,
+        input_permutations=None,
     ):
         """Return params as cli args.
 
@@ -238,7 +255,7 @@ class InstallJson:
         """
         args = {}
         for n, p in self.filter_params_dict(
-            name, required, service_config, _type, input_permutations
+            name, hidden, required, service_config, _type, input_permutations
         ).items():
             if p.get('type').lower() == 'boolean':
                 args[n] = self._to_bool(p.get('default', False))
@@ -368,6 +385,50 @@ class InstallJson:
             elif self.runtime_level.lower() in ['triggerservice', 'webhooktriggerservice']:
                 json_data['programMain'] = 'run'
         return json_data
+
+    def validate(self):
+        """Validate install.json."""
+
+        # check for duplicate input names
+        self.validate_duplicate_input_names()
+
+        # check for duplicate input names
+        self.validate_duplicate_sequences()
+
+    def validate_duplicate_input_names(self):
+        """Check for duplicate input names."""
+        duplicates = []
+        name_tracker = []
+        for p in self.params:
+            name = p.get('name')
+            if name in name_tracker:
+                duplicates.append(name)
+            name_tracker.append(name)
+        return duplicates
+
+    def validate_duplicate_sequences(self):
+        """Check for duplicate sequence numbers."""
+        duplicates = []
+        sequence_tracker = []
+        for p in self.params:
+            sequence = p.get('sequence')
+            if sequence in sequence_tracker:
+                duplicates.append(sequence)
+            sequence_tracker.append(sequence)
+        return duplicates
+
+    def validate_duplicate_outputs(self):
+        """Check for duplicate input names."""
+        duplicates = []
+        name_type_tracker = []
+        for o in self.output_variables:
+            name = o.get('name')
+            type_ = o.get('type')
+            name_type = f'{name}-{type_}'
+            if name_type in name_type_tracker:
+                duplicates.append(name)
+            name_type_tracker.append(name_type)
+        return duplicates
 
     #
     # properties

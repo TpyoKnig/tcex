@@ -998,6 +998,9 @@ class ProfileInteractive:
         note = data.get('note', '')[:100]
         _print_metadata('Note', note)
 
+        if data.get('required'):
+            _print_metadata('Required', 'true')
+
         if data.get('hidden'):
             _print_metadata('Hidden', 'true')
 
