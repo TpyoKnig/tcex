@@ -382,8 +382,8 @@ class Profile:
             # cleanup redis
             self.clear_context(context)
 
-        # update _data dict with updated profile
         if self.outputs is None or self.replace_outputs:
+            # update profile if current profile is not or user specifies --replace_outputs
             with open(self.filename, 'r+') as fh:
                 json_data = json.load(fh)
 
@@ -391,22 +391,32 @@ class Profile:
             self._write_file(json_data)
         elif self.merge_outputs:
             if trigger_id:
-                pass
+                # service Apps have a different structure with id: data
+                merged_outputs = {}
+                for id_, data in outputs.items():
+                    merged_outputs[id_] = {}
+                    for key in list(data):
+                        if key in self.outputs.get(id_, {}):
+                            # use current profile output value if exists
+                            merged_outputs[id_][key] = self.outputs[id_][key]
+                        else:
+                            merged_outputs[id_][key] = outputs[id_][key]
             else:
-                # BCS we need to update with new keys and remove old
+                # update playbook App profile outputs
                 merged_outputs = {}
                 for key in list(outputs):
                     if key in self.outputs:
-                        # use current value if exists
+                        # use current profile output value if exists
                         merged_outputs[key] = self.outputs[key]
                     else:
                         merged_outputs[key] = outputs[key]
 
-                with open(self.filename, 'r+') as fh:
-                    json_data = json.load(fh)
+            # update profile outputs
+            with open(self.filename, 'r+') as fh:
+                json_data = json.load(fh)
 
-                json_data['outputs'] = merged_outputs
-                self._write_file(json_data)
+            json_data['outputs'] = merged_outputs
+            self._write_file(json_data)
 
     def update_outputs_variables(self, outputs, output_variables, redis_data, trigger_id):
         """Return the outputs section of a profile.
