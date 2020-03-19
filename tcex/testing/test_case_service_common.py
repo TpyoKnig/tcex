@@ -163,12 +163,12 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
     def run_service(self):
         """Run the micro-service."""
         self.log_data('run', 'service method', self.service_run_method)
-        if self.service_run_method == 'subprocess':
-            # create required .app_params encrypted file. args are set in custom.py
-            self.app_init_create_config(
-                self.args, self.ij.output_variable_array, self.tcex_testing_context
-            )
 
+        # create required .app_params encrypted file. args are set in custom.py
+        self.app_init_create_config(
+            self.args, self.ij.output_variable_array, self.tcex_testing_context
+        )
+        if self.service_run_method == 'subprocess':
             # run the Service App as a subprocess
             self.app_process = subprocess.Popen(['python', 'run.py'])
         elif self.service_run_method == 'thread':
@@ -225,7 +225,7 @@ class TestCaseServiceCommon(TestCasePlaybookCommon):
         self.publish_shutdown()
 
         # give Service App x seconds to shutdown before terminating
-        if self.service_run_method == 'multiprocess':
+        if self.service_run_method == 'subprocess':
             for _ in range(1, 10):
                 time.sleep(0.5)
                 if self.app_process.poll() is not None:

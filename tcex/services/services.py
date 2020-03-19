@@ -70,6 +70,10 @@ class Services:
             )
             self.redis_client.hset(session_id, '_trigger_id', trigger_id)
 
+            # log
+            self.tcex.log.info(f'Wrote context {session_id} to _context_tracker')
+            self.tcex.log.info(f'Wrote trigger id {trigger_id} to _trigger_id')
+
     def add_metric(self, label, value):
         """Add a metric.
 
